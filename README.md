@@ -5,13 +5,15 @@
 ### *Every patient story deserves to be heard.*
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2015-000000.svg)]()
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2016-000000.svg)]()
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)]()
 [![MongoDB](https://img.shields.io/badge/Database-MongoDB-47A248.svg)]()
 [![JWT](https://img.shields.io/badge/Security-JWT-green.svg)]()
 [![AI Powered](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-orange.svg)]()
 
 **An AI-powered healthcare companion that helps users document, understand, and monitor their health journey through explainable AI insights, daily health tracking, and personalized wellness recommendations.**
+
+*Built with Next.js 16 + React 19, FastAPI, MongoDB, and Google Gemini 2.5 Flash.*
 
 </div>
 
@@ -205,9 +207,12 @@ Personalized Dashboard
 
 ## Frontend
 
-- Next.js 15 (App Router)
-- TypeScript
-- Tailwind CSS
+- Next.js 16 (App Router), React 19, TypeScript
+- Tailwind CSS 4
+- Radix UI primitives + `class-variance-authority` + `tailwind-merge` (shadcn/ui-style component pattern)
+- Framer Motion (animation)
+- Recharts (dashboard charts/trends)
+- Lucide React (icons)
 
 ## Backend
 
