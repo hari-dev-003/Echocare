@@ -5,11 +5,11 @@
 ### *Every patient story deserves to be heard.*
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![React](https://img.shields.io/badge/Frontend-React-61DAFB.svg)]()
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2015-000000.svg)]()
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)]()
-[![Google OAuth](https://img.shields.io/badge/Auth-Google%20OAuth-red.svg)]()
+[![MongoDB](https://img.shields.io/badge/Database-MongoDB-47A248.svg)]()
 [![JWT](https://img.shields.io/badge/Security-JWT-green.svg)]()
-[![AI Powered](https://img.shields.io/badge/AI-Gemini%20API-orange.svg)]()
+[![AI Powered](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-orange.svg)]()
 
 **An AI-powered healthcare companion that helps users document, understand, and monitor their health journey through explainable AI insights, daily health tracking, and personalized wellness recommendations.**
 
@@ -26,11 +26,12 @@
 - System Workflow
 - Technology Stack
 - Project Architecture
+- Scaling This to Production
 - Folder Structure
 - Installation
 - Environment Variables
 - Running the Project
-- Screenshots
+- Known Limitations
 - Future Scope
 - Team
 - Hackathon Journey
@@ -73,13 +74,13 @@ EchoCare provides a centralized platform where users can:
 
 - Record their complete health story
 - Maintain their medical history
-- Upload medical reports
+- Upload medical reports (PDF)
 - Track daily health activities
 - Receive AI-generated health insights
-- Understand medical reports
-- Monitor health trends
-- Receive wellness recommendations
-- Identify appropriate healthcare departments
+- Get plain-language explanations of medical reports
+- Monitor health trends over time
+- Receive wellness/care-pathway recommendations
+- Identify appropriate healthcare departments to consult
 
 All AI-generated insights are based solely on user-provided information and are intended to support—not replace—professional medical advice.
 
@@ -89,195 +90,113 @@ All AI-generated insights are based solely on user-provided information and are 
 
 ## 🔐 Secure Authentication
 
-- Google OAuth Login
-- JWT Authentication
-- Secure Session Management
+- Email/password registration & login (bcrypt-hashed passwords)
+- Google OAuth 2.0 login (ID token verified against Google's public certs)
+- JWT access tokens (HS256, 7-day expiry)
 
 ---
 
 ## 📝 Patient Story Analyzer
 
-Allows users to document:
+Users write their complete health story in free text — symptoms, previous consultations, pain points, emotional context, lifestyle habits — with autosave drafts.
 
-- Complete health history
-- Symptoms
-- Previous consultations
-- Pain points
-- Emotional concerns
-- Lifestyle habits
-
----
-
-## 📋 Initial Health Survey
-
-Collects
-
-- Medical history
-- Current symptoms
-- Sleep habits
-- Diet
-- Physical activity
-- Stress levels
-- Existing conditions
+The story is analyzed by a **custom fine-tuned LLM hosted on JarvisLabs** (`healthcompanion:latest`), cross-checked against a **regex-based symptom/timeline extractor**, and scored with a rule-based confidence function that blends AI output with keyword-level evidence from the raw text.
 
 ---
 
 ## 📅 Daily Health Tracker
 
-Monitor
+Monitor day-to-day:
 
-- Sleep
+- Fatigue, joint pain, brain fog, dizziness
 - Mood
-- Stress
-- Diet
-- Water Intake
-- Medication
-- Exercise
-- Symptoms
-- Energy Level
+- Sleep hours
+- Water intake
+- Free-text notes
+
+One record per user per day, with 30-day history for trend views.
 
 ---
 
-## 📄 Medical Report Analysis
+## 📄 Medical Report Upload
 
-Supports
-
-- Laboratory Reports
-- Blood Reports
-- Diagnostic Reports
-- Medical Prescriptions
-
-Provides
-
-- Simplified summaries
-- Important observations
-- Easy-to-understand explanations
+- Accepts PDF lab/diagnostic reports
+- Extracts text via **PyMuPDF**
+- Stores extracted text + metadata (doctor, specialty, report type/date) in MongoDB
+- *(Text-layer PDFs only — no OCR for scanned/image reports yet.)*
 
 ---
 
 ## 🤖 Explainable AI Health Insights
 
-Analyzes
+Powered by **Google Gemini 2.5 Flash**, combining:
 
-- Patient Story
-- Daily Health Logs
-- Lifestyle
-- Medical Reports
+- Patient story analysis
+- Daily tracker averages (sleep, stress, hydration, mood)
+- Survey data
 
-Provides
-
-- Health observations
-- Pattern recognition
-- Confidence Score
-- Explainable reasoning
-- Supporting evidence
+Returns structured insight cards: title, plain-language description, supporting evidence, confidence score, and category (warning / success / info).
 
 ---
 
-## 🩺 Medical Department Recommendation
+## 🩺 Care-Pathway & Department Suggestions
 
-Suggests appropriate healthcare departments such as
-
-- General Physician
-- Neurology
-- Cardiology
-- Gastroenterology
-- Dermatology
-- Orthopedics
-- Psychiatry
-- ENT
+Ranks five care approaches — **Allopathy, Ayurveda, Siddha, Homeopathy, Naturopathy** — by relevance to the user's symptoms and survey data, each with confidence score, evidence level, typical focus, benefits, limitations, and precautions. Also suggests relevant medical departments (e.g. Rheumatology, Neurology, Endocrinology) with reasoning.
 
 ---
 
-## ❤️ Personalized Wellness Recommendations
+## 🎙 Voice Intake
 
-Recommendations include
+Speech transcripts (Tamil / English / Tanglish) are cleaned and translated into clinical English via a low-temperature Gemini call, preserving medical details without adding new claims.
 
-- Healthy diet
-- Better sleep habits
-- Exercise
-- Stretching
-- Stress reduction
-- Hydration
-- Healthy routines
+---
+
+## 💬 Context-Aware Chat
+
+A chat assistant that injects the user's survey answers, story analysis, tracker logs, and uploaded reports into the prompt context, so responses stay grounded in the user's own data.
 
 ---
 
 ## 📊 Personalized Dashboard
 
-Displays
-
-- Health Score
-- Daily Tracking
-- Sleep Analysis
-- Activity Trends
-- AI Insights
-- Medical Reports
-- Recommendations
-- Health Timeline
+Displays health score, daily tracking trends, AI insights, uploaded reports, and recommendations in one view.
 
 ---
 
-## 🌿 Stress Support
+## 🌿 Stress Support & 🧘 Self-Care Tools
 
-Dedicated support modules for
-
-- Workplace Stress
-- Family Stress
-
-Includes
-
-- Communication guidance
-- Burnout self-check
-- Wellness activities
-
----
-
-## 🧘 Self-Care Tools
-
-- Grounding Exercises
-- Breathing Exercises
-- Journaling
-- Relaxation Activities
-
-Private by design with no reporting trail.
+Dedicated modules for workplace/family stress guidance, grounding and breathing exercises, and journaling — private by design.
 
 ---
 
 # 🔄 System Workflow
 
 ```text
-User Registration
+User Registration (Email/Password or Google OAuth)
         │
         ▼
-Google OAuth Authentication
-        │
-        ▼
-Health Profile Creation
+JWT Issued
         │
         ▼
 Patient Story Submission
         │
         ▼
-Initial Health Survey
+Story Analysis (JarvisLabs LLM + regex extractor)
         │
         ▼
 Daily Health Tracking
         │
         ▼
-Medical Report Upload
+Medical Report Upload (PyMuPDF text extraction)
         │
         ▼
-AI Health Analysis
+AI Health Insights (Gemini 2.5 Flash)
         │
         ▼
-Explainable AI Insights
+Care-Pathway & Department Recommendations
         │
         ▼
-Department Recommendation
-        │
-        ▼
-Health Dashboard
+Personalized Dashboard
 ```
 
 ---
@@ -286,86 +205,92 @@ Health Dashboard
 
 ## Frontend
 
-- React.js / Next.js
+- Next.js 15 (App Router)
 - TypeScript
 - Tailwind CSS
-- shadcn/ui
-- Framer Motion
-- Recharts
-
----
 
 ## Backend
 
-- FastAPI
-- Python
+- FastAPI (Python)
+- Motor (async MongoDB driver)
 
----
+## AI & Machine Learning
+
+- Google Gemini 2.5 Flash — insights, story analysis (fallback), integrative suggestions, chat, voice translation
+- Custom fine-tuned LLM on JarvisLabs (`healthcompanion:latest`) — primary story analysis
+- Regex/heuristic symptom & timeline extraction — parallel signal + fallback
 
 ## Authentication
 
 - Google OAuth 2.0
-- JWT Authentication
-
----
-
-## AI & Machine Learning
-
-- Google Gemini API
-- spaCy
-- Transformers
-- Sentence Transformers
-
----
+- JWT (python-jose, HS256)
+- bcrypt password hashing
 
 ## Database
 
-- PostgreSQL
-- MongoDB
+- MongoDB (Atlas) — single database for all collections (users, stories, tracker_logs, reports)
 
----
+## Report Processing
 
-## OCR & Report Processing
-
-- PyMuPDF
-- EasyOCR
-
----
+- PyMuPDF (fitz) — text-layer PDF extraction
 
 ## Deployment
 
-- Vercel
-- Render
-- Docker
+- Vercel (frontend)
+- Render (backend, per `render.yaml`)
 
 ---
 
 # 🏗 Project Architecture
 
 ```text
-Users
-   │
-   ▼
-Frontend (React + Tailwind)
-   │
-   ▼
-Google OAuth + JWT
-   │
-   ▼
-FastAPI Backend
-   │
-   ├──────────────┐
-   ▼              ▼
-AI Engine      Business Logic
-   │              │
-   └──────┬───────┘
-          ▼
-Database Layer
-(PostgreSQL + MongoDB)
-          │
-          ▼
-Cloud Storage
+                    ┌───────────────────────────┐
+                    │     Next.js Frontend        │
+                    │     (Vercel)                 │
+                    │                               │
+                    │  Pages: dashboard, story,     │
+                    │  tracker, insights, chat,     │
+                    │  reports, survey, self-care…  │
+                    │                               │
+                    │  API routes:                  │
+                    │  /api/analyze-story            │
+                    │  /api/health-insights          │
+                    │  /api/integrative               │
+                    │  /api/chat                      │
+                    │  /api/translate-voice           │
+                    └─────────┬──────────┬────────────┘
+                              │          │
+              JWT (Bearer)    │          │  server-side only
+                              │          │
+                    ┌─────────▼───┐   ┌──▼──────────────┐
+                    │  FastAPI     │   │  Gemini 2.5      │
+                    │  (Render)    │   │  Flash API       │
+                    │              │   └──────────────────┘
+                    │  /api/auth   │   ┌──────────────────┐
+                    │  /api/story  │   │  JarvisLabs       │
+                    │  /api/tracker│   │  fine-tuned LLM   │
+                    └──────┬───────┘   └───────────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │  MongoDB      │
+                    │  Atlas        │
+                    └───────────────┘
 ```
+
+**Why two backends:** FastAPI owns durable user data and auth; the Next.js API layer owns AI orchestration, so the Gemini key never reaches the browser and AI prompt logic can iterate independently of the data layer.
+
+---
+
+# 📈 Scaling This to Production
+
+The current build is correctly scoped for a hackathon: one MongoDB instance, no queueing, synchronous AI calls on the request path. Here's how it would evolve toward real scale:
+
+1. **Decouple AI calls from the request/response cycle** — move story analysis and insight generation to a background job queue (Celery/RQ or FastAPI background tasks against Redis) so uploads return instantly and results stream in via polling or a websocket.
+2. **Cache and route by cost** — hash-based caching in front of repeated Gemini/JarvisLabs calls; route deterministic sub-tasks (keyword symptom detection) to the existing regex layer instead of the LLM, reserving model calls for genuinely ambiguous input.
+3. **Split storage by access pattern** — keep MongoDB for AI-output documents (schema shifts every iteration, no migrations needed), move relational data (accounts, billing, audit trail) to PostgreSQL for integrity and query performance.
+4. **Harden auth** — move the JWT from `localStorage` to an httpOnly secure cookie, add refresh tokens, remove any unverified-token fallback path, enforce per-tenant data isolation guarantees.
+5. **Add cost & usage observability** — log tokens in/out, latency, and cache hit rate per AI call to produce a real AI-cost-per-active-user metric.
+6. **Horizontal scaling** — the backend is already stateless (no in-memory session), so scaling out is a matter of running multiple FastAPI replicas behind a load balancer with MongoDB Atlas handling replication.
 
 ---
 
@@ -373,52 +298,60 @@ Cloud Storage
 
 ```text
 EchoCare/
-
-├── frontend/
-│   ├── components/
-│   ├── pages/
-│   ├── hooks/
-│   ├── assets/
-│   └── styles/
+├── src/
+│   ├── app/
+│   │   ├── api/                # Next.js API routes (AI orchestration)
+│   │   ├── dashboard/
+│   │   ├── story/
+│   │   ├── tracker/
+│   │   ├── insights/
+│   │   ├── chat/
+│   │   ├── reports/
+│   │   ├── survey/
+│   │   ├── self-care/
+│   │   ├── stress/
+│   │   ├── consultancy/
+│   │   └── ... (login, signup, settings, notifications, profile)
+│   ├── components/             # AppLayout, Sidebar, Topbar, AuthGuard, AuthProvider
+│   └── lib/                    # auth.ts, backend.ts, gemini.ts
 │
 ├── backend/
-│   ├── auth/
-│   ├── api/
-│   ├── ai/
-│   ├── services/
-│   ├── database/
-│   └── models/
+│   ├── main.py                 # FastAPI app + CORS + lifespan
+│   ├── database.py             # MongoDB connection (Motor)
+│   ├── auth_utils.py           # JWT, bcrypt, Google token verification
+│   └── routers/
+│       ├── auth.py
+│       ├── story.py
+│       └── tracker.py
 │
-├── docs/
-│
-├── screenshots/
-│
-├── README.md
-│
-└── LICENSE
+├── public/
+├── render.yaml
+├── package.json
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
 # 🚀 Installation
 
-Clone Repository
+Clone the repository
 
 ```bash
-git clone https://github.com/badri-2005/DOS-Finals.git
-
-cd DOS-Finals
+git clone https://github.com/Kavincodeg/EchoCare.git
+cd EchoCare
 ```
 
-Install Frontend
+Install frontend dependencies
 
 ```bash
 npm install
 ```
 
-Install Backend
+Install backend dependencies
 
 ```bash
+cd backend
 pip install -r requirements.txt
 ```
 
@@ -426,20 +359,23 @@ pip install -r requirements.txt
 
 # 🔑 Environment Variables
 
-Create a `.env` file.
+**Frontend** — `.env.local`
 
 ```env
-GOOGLE_CLIENT_ID=
-
-GOOGLE_CLIENT_SECRET=
-
-JWT_SECRET=
-
-DATABASE_URL=
-
-MONGODB_URI=
-
 GEMINI_API_KEY=
+NEXT_PUBLIC_BACKEND_URL=
+JARVISLABS_LLM_URL=
+JARVISLABS_MODEL=
+```
+
+**Backend** — `.env`
+
+```env
+MONGODB_URI=
+MONGODB_DB_NAME=echocare
+SECRET_KEY=
+GOOGLE_CLIENT_ID=
+FRONTEND_URL=
 ```
 
 ---
@@ -455,6 +391,7 @@ npm run dev
 Backend
 
 ```bash
+cd backend
 uvicorn main:app --reload
 ```
 
@@ -466,62 +403,28 @@ http://localhost:3000
 
 ---
 
-# 📸 Screenshots
+# ⚠ Known Limitations
 
-## Landing Page
+Being transparent about the current state of the codebase:
 
-*(Add Screenshot)*
-
----
-
-## Dashboard
-
-*(Add Screenshot)*
-
----
-
-## Patient Story
-
-*(Add Screenshot)*
-
----
-
-## Daily Health Tracker
-
-*(Add Screenshot)*
-
----
-
-## AI Health Insights
-
-*(Add Screenshot)*
-
----
-
-## Medical Report Analysis
-
-*(Add Screenshot)*
-
----
-
-# 🎥 Demo
-
-Add your demo video here.
+- Doctor recommendation lists and "community outcome" statistics are illustrative/hardcoded, not real aggregated data.
+- The frontend `doctor-feedback` route forwards to a backend endpoint that isn't implemented yet — feature is stubbed, not wired end-to-end.
+- No automated test suite yet.
+- PDF processing extracts text only — no OCR for scanned/image-based reports.
+- JWT is currently stored in `localStorage`; production hardening would move this to an httpOnly cookie.
 
 ---
 
 # 🔮 Future Enhancements
 
-- Smartwatch Integration
-- Wearable Device Support
-- Voice-Based Story Recording
-- Hospital Integration
-- Electronic Health Record Integration
-- AI Predictive Analytics
-- Mobile Applications
-- Multi-language Support
-- Doctor Portal
-- Appointment Scheduling
+- Background job queue for AI processing
+- Redis caching layer for repeated AI calls
+- PostgreSQL for relational account/billing data
+- OCR support for scanned reports
+- Wearable/smartwatch integration
+- Doctor portal & appointment scheduling
+- Mobile applications
+- Automated test suite
 
 ---
 
@@ -529,7 +432,7 @@ Add your demo video here.
 
 | Team Member | Role |
 |-------------|------|
-| **Kavin V S** | Project Manager |
+| **Kavin V S** | Project Manager & Fullstack Developer |
 | **Savita S** | Business Analyst |
 | **Rahul K** | AI/ML Architect |
 | **Badri Narayanan B R** | Fullstack Developer |
@@ -542,39 +445,34 @@ Add your demo video here.
 ## What We Learned
 
 - Healthcare system analysis
-- Explainable AI
-- Secure authentication
-- User-centered design
-- Longitudinal health tracking
-
----
+- Prompt engineering for structured, explainable AI output
+- Building fault-tolerant AI integrations (fallback generation on API/parse failure)
+- Secure authentication (JWT, OAuth)
+- User-centered design for a sensitive domain
 
 ## Challenges
 
-- Processing unstructured patient stories
-- Building transparent AI recommendations
-- Managing healthcare data securely
-- Designing an intuitive healthcare experience
-
----
+- Processing unstructured, free-text patient stories reliably
+- Balancing AI-generated suggestions with clear precautions and non-diagnostic framing
+- Managing healthcare data securely across two backends
+- Designing an intuitive experience for an emotionally sensitive use case
 
 ## Achievements
 
-- Built a complete AI healthcare companion.
-- Developed explainable AI workflows.
-- Designed a scalable architecture.
-- Created a patient-first user experience.
+- Built a working end-to-end AI healthcare companion in hackathon timeframe
+- Implemented a dual-model story analysis pipeline (fine-tuned LLM + regex extraction + confidence scoring)
+- Designed AI calls with deterministic fallbacks so the app never breaks on API failure or bad JSON
+- Shipped 20+ routed pages across auth, tracking, insights, and self-care
 
 ---
 
 # 🤖 AI Tools Used
 
-- ChatGPT
-- Google Gemini
-- GitHub Copilot
-- Figma AI
+- Google Gemini 2.5 Flash (product feature)
+- Custom fine-tuned LLM on JarvisLabs (product feature)
+- GitHub Copilot / ChatGPT (development assistance)
 
-All AI-generated content and code were reviewed, validated, and customized by the development team.
+All AI-generated content and code were reviewed and customized by the development team.
 
 ---
 
@@ -604,9 +502,6 @@ Special thanks to:
 - Our mentors and judges for their valuable feedback.
 - The open-source community for providing amazing frameworks and tools.
 
-
-
 ### ⭐ If you like this project, don't forget to give it a Star!
 
 ## ❤️ Every patient story deserves to be heard.
-
