@@ -5,8 +5,8 @@ services:
     env: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: uv sync --frozen
+    startCommand: uv run uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: MONGODB_URI
         sync: false # User will input this in the Render UI
@@ -14,14 +14,26 @@ services:
         value: EchoCare
       - key: SECRET_KEY
         generateValue: true # Generates a secure random JWT key automatically
-      - key: GEMINI_API_KEY
-        sync: false # User will input this in the Render UI
       - key: GOOGLE_CLIENT_ID
+        sync: false # User will input this in the Render UI
+      - key: GOOGLE_API_KEY
+        sync: false # User will input this in the Render UI
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false # User will input this in the Render UI
+      - key: GROQ_API_KEY
+        sync: false # User will input this in the Render UI
+      - key: TAVILY_API_KEY
+        sync: false # User will input this in the Render UI
+      - key: JARVISLABS_LLM_URL
+        sync: false # User will input this in the Render UI
+      - key: JARVISLABS_MODEL
+        value: healthcompanion:latest
+      - key: CLOUDINARY_URL
         sync: false # User will input this in the Render UI
       - key: FRONTEND_URL
         value: https://echocare-frontend.onrender.com
       - key: PYTHON_VERSION
-        value: 3.10.13
+        value: 3.11.9
 
   # 2. Next.js Frontend Web Service
   - type: web
@@ -35,5 +47,7 @@ services:
         value: https://echocare-backend.onrender.com
       - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
         sync: false # User will input this in the Render UI
-      - key: GEMINI_API_KEY
+      - key: NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY
+        sync: false # User will input this in the Render UI
+      - key: GEMINI_API_KEY # removed in Task 39 when AI moves to FastAPI
         sync: false # User will input this in the Render UI

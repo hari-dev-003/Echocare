@@ -1,17 +1,21 @@
 "use client";
 import AppLayout from "@/components/AppLayout";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star, Check, AlertCircle, Shield, Send, ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { backendJSON } from "@/lib/backend";
 
 type FeedbackStep = "select" | "rate" | "review" | "done";
 
-const healthcareSystems = ["Allopathy", "Ayurveda", "Siddha", "Homeopathy", "Naturopathy"];
+type FeedbackHistoryItem = {
+  system: string;
+  doctor_name: string;
+  rating: number;
+  review?: string;
+  created_at?: string;
+};
 
-const pastFeedback = [
-  { system: "Ayurveda", doctor: "Dr. Vaidya Ramesh Nair", date: "Jun 15, 2025", rating: 5, summary: "Excellent consultation. Very thorough and holistic approach." },
-  { system: "Allopathy", doctor: "Dr. Priya Sharma", date: "May 28, 2025", rating: 4, summary: "Good diagnostics. Followed up well on test results." },
-];
+const healthcareSystems = ["Allopathy", "Ayurveda", "Siddha", "Homeopathy", "Naturopathy"];
 
 function StarRating({ value, onChange, size = 28 }: { value: number; onChange: (v: number) => void; size?: number }) {
   const [hovered, setHovered] = useState(0);
@@ -54,28 +58,42 @@ export default function FeedbackPage() {
   const [satisfaction, setSatisfaction] = useState(7);
   const [review, setReview] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+  const [history, setHistory] = useState<FeedbackHistoryItem[]>([]);
 
   const ratingLabels = ["", "Very Poor", "Poor", "Below Average", "Average", "Good", "Very Good", "Great", "Excellent", "Outstanding", "Perfect"];
+
+  const loadHistory = async () => {
+    try {
+      const data = await backendJSON<FeedbackHistoryItem[]>("/api/doctor-feedback");
+      setHistory(data);
+    } catch {}
+  };
+
+  useEffect(() => { loadHistory(); }, []);
 
   const handleSubmit = async () => {
     if (!system || !doctorName || rating === 0) return;
     setSubmitting(true);
+    setSubmitError(false);
     try {
-      const res = await fetch("/api/doctor-feedback", {
+      await backendJSON("/api/doctor-feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doctorName, system, rating, helpfulness, communication, followUp, satisfaction, review }),
+        body: JSON.stringify({
+          doctor_name: doctorName,
+          system,
+          rating,
+          helpfulness,
+          communication,
+          follow_up: followUp,
+          satisfaction,
+          review,
+        }),
       });
-      if (res.ok) {
-        // Save to localStorage for history
-        const history = JSON.parse(localStorage.getItem("echocare-feedback-history") || "[]");
-        history.unshift({ system, doctorName, date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }), rating, summary: review || `${ratingLabels[rating]} experience with ${doctorName}.` });
-        localStorage.setItem("echocare-feedback-history", JSON.stringify(history.slice(0, 20)));
-        setStep("done");
-      }
-    } catch {
-      // Still show done as localStorage is already saved
       setStep("done");
+      loadHistory();
+    } catch {
+      setSubmitError(true);
     } finally {
       setSubmitting(false);
     }
@@ -223,6 +241,13 @@ export default function FeedbackPage() {
                   Your review will be anonymized before being used in community insights. No personal details will be visible.
                 </div>
 
+                {submitError && (
+                  <div className="alert alert-warning" style={{ fontSize: "12px", marginTop: "12px" }}>
+                    <AlertCircle size={12} style={{ flexShrink: 0 }} />
+                    Could not submit feedback. Please try again.
+                  </div>
+                )}
+
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: "20px" }}>
                   <button className="btn btn-secondary" onClick={() => setStep("rate")}>← Back</button>
                   <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting} style={{ minWidth: "160px" }}>
@@ -236,22 +261,23 @@ export default function FeedbackPage() {
             <div className="card" style={{ padding: "24px" }}>
               <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "16px" }}>Your Feedback History</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {pastFeedback.map((f, i) => (
+                {history.length === 0 && <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>No feedback submitted yet.</p>}
+                {history.map((f, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 16px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--background)" }}>
                     <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "rgba(15,118,110,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", flexShrink: 0 }}>
                       {f.system === "Ayurveda" ? "🌿" : f.system === "Allopathy" ? "🏥" : "⚗️"}
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
-                        <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>{f.doctor}</span>
+                        <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>{f.doctor_name}</span>
                         <span style={{ padding: "2px 8px", borderRadius: "100px", background: "rgba(15,118,110,0.1)", fontSize: "10px", fontWeight: 700, color: "#0F766E" }}>{f.system}</span>
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{f.date}</div>
-                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>{f.summary}</div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{f.created_at ? new Date(f.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>{f.review || `${ratingLabels[f.rating]} experience with ${f.doctor_name}.`}</div>
                     </div>
                     <div style={{ display: "flex", gap: "2px" }}>
                       {Array.from({ length: 5 }).map((_, j) => (
-                        <Star key={j} size={12} color="#F59E0B" fill={j < f.rating ? "#F59E0B" : "none"} />
+                        <Star key={j} size={12} color="#F59E0B" fill={j < Math.round(f.rating / 2) ? "#F59E0B" : "none"} />
                       ))}
                     </div>
                   </div>

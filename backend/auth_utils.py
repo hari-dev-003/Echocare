@@ -6,7 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "echocare-super-secret-jwt-key-2025")
+
+def require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+SECRET_KEY = require_env("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
@@ -50,34 +58,57 @@ def decode_token(token: str) -> Optional[str]:
 
 import urllib.request
 import json
+import re
+import time
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "543477464295-p789kdf5nve8tr3kef1a4p120895o9e8.apps.googleusercontent.com")
+GOOGLE_CLIENT_ID = require_env("GOOGLE_CLIENT_ID")
 GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+
+_certs_cache: dict = {"certs": None, "expires_at": 0.0}
+
+
+def _fetch_google_certs() -> dict:
+    """Fetch Google's JWK cert set, cached for Cache-Control: max-age."""
+    if _certs_cache["certs"] is not None and time.time() < _certs_cache["expires_at"]:
+        return _certs_cache["certs"]
+
+    req = urllib.request.Request(
+        GOOGLE_CERTS_URL,
+        headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            certs = json.loads(response.read().decode())
+            cache_control = response.headers.get("Cache-Control", "")
+            match = re.search(r"max-age=(\d+)", cache_control)
+            max_age = int(match.group(1)) if match else 0
+    except Exception as e:
+        if _certs_cache["certs"] is not None:
+            # Transient network error: keep serving the stale-but-still-known
+            # cert set rather than rejecting every Google login in the meantime.
+            print("Google certs refetch failed, using cached certs:", type(e).__name__)
+            return _certs_cache["certs"]
+        raise
+
+    _certs_cache["certs"] = certs
+    _certs_cache["expires_at"] = time.time() + max_age
+    return certs
+
 
 def verify_google_token(id_token: str) -> Optional[dict]:
     try:
-        req = urllib.request.Request(
-            GOOGLE_CERTS_URL,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            certs = json.loads(response.read().decode())
+        certs = _fetch_google_certs()
 
         payload = jwt.decode(
             id_token,
             certs,
             algorithms=["RS256"],
             audience=GOOGLE_CLIENT_ID,
-            issuer="https://accounts.google.com"
+            issuer=["https://accounts.google.com", "accounts.google.com"]
         )
+        if payload.get("email_verified") is not True:
+            return None
         return payload
     except Exception as e:
-        print("Google token verification failed:", e)
-        try:
-            # Fallback to decode unverified claims during local development / testing
-            unverified = jwt.get_unverified_claims(id_token)
-            if unverified and "email" in unverified:
-                return unverified
-        except Exception:
-            pass
+        print("Google token verification failed:", type(e).__name__)
         return None

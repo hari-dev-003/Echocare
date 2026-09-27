@@ -324,7 +324,9 @@ EchoCare/
 │   ├── main.py                 # FastAPI app + CORS + lifespan
 │   ├── database.py             # MongoDB connection (Motor)
 │   ├── auth_utils.py           # JWT, bcrypt, Google token verification
-│   └── routers/
+│   ├── pyproject.toml          # Backend dependencies and uv configuration
+│   ├── uv.lock                 # Locked backend dependencies
+│   └── routers/                # FastAPI route modules
 │       ├── auth.py
 │       ├── story.py
 │       └── tracker.py
@@ -332,7 +334,6 @@ EchoCare/
 ├── public/
 ├── render.yaml
 ├── package.json
-├── requirements.txt
 └── README.md
 ```
 
@@ -353,11 +354,11 @@ Install frontend dependencies
 npm install
 ```
 
-Install backend dependencies
+Install backend dependencies with uv
 
 ```bash
 cd backend
-pip install -r requirements.txt
+uv sync
 ```
 
 ---
@@ -397,14 +398,33 @@ Backend
 
 ```bash
 cd backend
-uvicorn main:app --reload
+uv run uvicorn main:app --reload
 ```
+
+Run the frontend command from the repository root. Run the backend command in a second terminal, also starting from the repository root.
 
 Visit
 
 ```
 http://localhost:3000
 ```
+
+---
+
+# 🔍 Evidence Search Setup (one-time, per Atlas cluster)
+
+EchoCare embeds every survey answer, tracker day, uploaded report and
+analysed story into `evidence_chunks` for LE-RAG retrieval. This needs an
+Atlas Vector Search index (M0 free tier works) and, for existing data, a
+back-fill:
+
+```bash
+cd backend
+uv run python scripts/create_vector_index.py   # idempotent, polls until READY
+uv run python scripts/backfill_chunks.py       # idempotent, chunks + embeds existing data
+```
+
+Requires `GOOGLE_API_KEY` or `GEMINI_API_KEY` in `backend/.env` for embeddings; without it, chunks are stored with `needs_embedding: true` and `backfill_chunks.py` retries them on a later run.
 
 ---
 

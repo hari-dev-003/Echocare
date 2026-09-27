@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { Heart, Brain, Shield, TrendingUp, ChevronRight, Star, Play, Check, ArrowRight, Stethoscope, Activity, Moon, Zap, Info } from "lucide-react";
+import { Heart, Brain, Shield, TrendingUp, ChevronRight, Star, Check, ArrowRight, Stethoscope, Activity, Moon, Zap, Info } from "lucide-react";
 
 // Animated counter hook
 function useCounter(end: number, duration: number = 2000, start: boolean = false) {
@@ -156,14 +156,6 @@ export default function LandingPage() {
                 boxShadow: "0 8px 24px rgba(15,118,110,0.35)", transition: "transform 0.2s"
               }}>
                 Start Your Story <ArrowRight size={16} />
-              </Link>
-              <Link href="/home?demo=true" style={{
-                padding: "14px 24px", borderRadius: "14px", fontSize: "15px", fontWeight: 600,
-                color: "#0F766E", background: "white", textDecoration: "none",
-                display: "flex", alignItems: "center", gap: "8px",
-                border: "1.5px solid rgba(15,118,110,0.2)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)"
-              }}>
-                <Play size={14} fill="#0F766E" /> Watch Demo
               </Link>
             </div>
 

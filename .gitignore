@@ -45,3 +45,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 backend/.env
+
+# local tooling
+.superpowers/
+.venv/
+
+/backend/tests

@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
+from pymongo.errors import DuplicateKeyError
 from datetime import datetime
 from database import get_db
 from auth_utils import hash_password, verify_password, create_access_token, decode_token, verify_google_token
+from limiter import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -12,9 +14,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    full_name: str
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(min_length=1, max_length=100)
 
 
 class GoogleLoginRequest(BaseModel):
@@ -44,20 +46,28 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=UserResponse)
-async def register(data: RegisterRequest):
+@limiter.limit("5/minute")
+async def register(request: Request, data: RegisterRequest):
     db = get_db()
-    existing = await db.users.find_one({"email": data.email.lower().strip()})
+    email = str(data.email).lower().strip()
+    existing = await db.users.find_one({"email": email})
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Email already registered")
 
     doc = {
-        "email": data.email.lower().strip(),
+        "email": email,
         "full_name": data.full_name.strip(),
         "hashed_password": hash_password(data.password),
         "active_plan": "Free",
         "created_at": datetime.utcnow().isoformat(),
     }
-    result = await db.users.insert_one(doc)
+    try:
+        result = await db.users.insert_one(doc)
+    except DuplicateKeyError:
+        # Closes the find_one/insert_one race: two concurrent registers for
+        # the same email can both pass the check above, but only one insert
+        # wins against the unique index.
+        raise HTTPException(status_code=409, detail="Email already registered")
 
     return UserResponse(
         id=str(result.inserted_id),
@@ -68,7 +78,8 @@ async def register(data: RegisterRequest):
 
 
 @router.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("10/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     db = get_db()
     user = await db.users.find_one({"email": form_data.username.lower().strip()})
     if not user or not verify_password(form_data.password, user["hashed_password"]):
@@ -79,7 +90,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @router.post("/google")
-async def google_login(data: GoogleLoginRequest):
+@limiter.limit("10/minute")
+async def google_login(request: Request, data: GoogleLoginRequest):
     payload = verify_google_token(data.id_token)
     if not payload:
         raise HTTPException(status_code=400, detail="Invalid Google ID token")
@@ -98,8 +110,13 @@ async def google_login(data: GoogleLoginRequest):
             "active_plan": "Free",
             "created_at": datetime.utcnow().isoformat(),
         }
-        result = await db.users.insert_one(doc)
-        user = await db.users.find_one({"_id": result.inserted_id})
+        try:
+            result = await db.users.insert_one(doc)
+            user = await db.users.find_one({"_id": result.inserted_id})
+        except DuplicateKeyError:
+            # Same email raced in via another request (e.g. register); the
+            # unique index let exactly one insert win.
+            user = await db.users.find_one({"email": email})
 
     token = create_access_token({"sub": user["email"]})
     return {"access_token": token, "token_type": "bearer"}

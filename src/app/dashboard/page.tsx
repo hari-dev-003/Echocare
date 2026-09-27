@@ -1,50 +1,61 @@
 "use client";
 import AppLayout from "@/components/AppLayout";
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Brain, Activity, Moon, Droplets, Smile, Zap, FileText, Calendar, ChevronRight, AlertCircle, Sparkles, Play, Star, Users, Leaf, Check, ArrowRight, ClipboardList } from "lucide-react";
+import { TrendingUp, TrendingDown, Brain, Activity, Moon, Droplets, Smile, Zap, FileText, Calendar, ChevronRight, AlertCircle, Sparkles, Star, Users, Leaf, Check, ArrowRight, ClipboardList } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
+import { backendJSON } from "@/lib/backend";
+import EvidenceCard from "@/components/EvidenceCard";
+import type { Excerpt, EvidenceSummary } from "@/components/EvidenceCard";
 
-const defaultSymptomData = [
-  { day: "Mon", fatigue: 7, pain: 4, mood: 6 }, { day: "Tue", fatigue: 6, pain: 3, mood: 7 },
-  { day: "Wed", fatigue: 8, pain: 5, mood: 5 }, { day: "Thu", fatigue: 5, pain: 3, mood: 8 },
-  { day: "Fri", fatigue: 4, pain: 2, mood: 8 }, { day: "Sat", fatigue: 3, pain: 2, mood: 9 }, { day: "Sun", fatigue: 5, pain: 3, mood: 7 },
-];
+// Top-3 dashboard insights come straight from GET /api/health-insights
+// (LE-RAG, Task 15) — only the fields the compact EvidenceCard needs.
+interface DashboardInsight {
+  id: string;
+  title: string;
+  observation: string;
+  confidence: number;
+  low_confidence: boolean;
+  evidence_summary: EvidenceSummary;
+  evidence: Excerpt[];
+  provider: string;
+}
 
-const defaultSleepData = [
-  { day: "Mon", hours: 5.5 }, { day: "Tue", hours: 6.2 }, { day: "Wed", hours: 4.8 },
-  { day: "Thu", hours: 7.1 }, { day: "Fri", hours: 6.8 }, { day: "Sat", hours: 8.2 }, { day: "Sun", hours: 7.4 },
-];
+// Tracker docs may be legacy (fatigue/joint_pain/brain_fog/dizziness/water_intake)
+// or current (energy/pain/water_glasses). Prefer the current field; fall back to
+// the legacy one; never invent a value that wasn't actually logged.
+type TrackerLog = Record<string, unknown> & { date: string; mood: string };
+const painOf = (log: TrackerLog): number | undefined => {
+  const v = log.pain ?? log.joint_pain;
+  return v == null ? undefined : Number(v);
+};
+const waterOf = (log: TrackerLog): number | undefined => {
+  const v = log.water_glasses ?? log.water_intake;
+  return v == null ? undefined : Number(v);
+};
+const fatigueOf = (log: TrackerLog): number | undefined => {
+  const v = log.fatigue;
+  return v == null ? undefined : Number(v);
+};
+const sleepOf = (log: TrackerLog): number | undefined => {
+  const v = log.sleep_hours;
+  return v == null ? undefined : Number(v);
+};
 
-const defaultMetrics = [
-  { label: "Stress Level", value: "Moderate", icon: Zap, color: "#F59E0B", bg: "rgba(245,158,11,0.08)", trend: "-2", up: false },
-  { label: "Sleep Quality", value: "6.8", max: "hrs", icon: Moon, color: "#8B5CF6", bg: "rgba(139,92,246,0.08)", trend: "+0.5", up: true },
-  { label: "Water Intake", value: "6", max: "/8 cups", icon: Droplets, color: "#3B82F6", bg: "rgba(59,130,246,0.08)", trend: "On track", up: true },
-  { label: "Mood", value: "Good", icon: Smile, color: "#22C55E", bg: "rgba(34,197,94,0.08)", trend: "+1", up: true },
-  { label: "Activity", value: "4,245", max: " steps", icon: Activity, color: "#EF4444", bg: "rgba(239,68,68,0.08)", trend: "-800", up: false },
-];
+type SymptomPoint = { day: string; fatigue: number | null; pain: number | null; mood: number | null };
+type SleepPoint = { day: string; hours: number | null };
+type Metric = { label: string; value: string; max?: string; icon: typeof Zap; color: string; bg: string; trend: string; up: boolean };
+type ReportSummary = { name: string; date: string; status: string };
 
-const defaultReports = [
-  { name: "Blood Test Report", date: "May 20, 2025", status: "Analyzed" },
-  { name: "MRI Brain Scan", date: "May 15, 2025", status: "Uploaded" },
-  { name: "X-Ray Chest", date: "May 10, 2025", status: "Analyzed" },
-];
-
-const defaultInsights = [
-  { text: "Your sleep quality has improved by 12% this week.", type: "success" },
-  { text: "Stress levels are higher on weekdays. Consider a routine.", type: "warning" },
-  { text: "Consider improving hydration — averaging 6/8 cups.", type: "info" },
-];
-
-function HealthScoreRing({ score, size = 120 }: { score: number; size?: number }) {
+function HealthScoreRing({ score, size = 120 }: { score: number | null; size?: number }) {
   const [animated, setAnimated] = useState(0);
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (animated / 100) * circumference;
 
   useEffect(() => {
-    const timer = setTimeout(() => setAnimated(score), 300);
+    const timer = setTimeout(() => setAnimated(score ?? 0), 300);
     return () => clearTimeout(timer);
   }, [score]);
 
@@ -65,7 +76,7 @@ function HealthScoreRing({ score, size = 120 }: { score: number; size?: number }
         </defs>
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: size === 120 ? "28px" : "20px", fontWeight: 900, color: "#0F766E", letterSpacing: "-0.03em" }}>{animated}</span>
+        <span style={{ fontSize: size === 120 ? "28px" : "20px", fontWeight: 900, color: "#0F766E", letterSpacing: "-0.03em" }}>{score == null ? "—" : animated}</span>
         <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>/100</span>
       </div>
     </div>
@@ -74,19 +85,17 @@ function HealthScoreRing({ score, size = 120 }: { score: number; size?: number }
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [demoMode, setDemoMode] = useState(false);
   const [surveyCompleted, setSurveyCompleted] = useState(false);
-  const [integrativeTopSystems, setIntegrativeTopSystems] = useState<{ name: string; icon: string; confidence: number; color: string }[]>([]);
   const [feedbackHistory, setFeedbackHistory] = useState<{ system: string; doctor: string; date: string; rating: number }[]>([]);
 
-  // Live data states
-  const [symptomTrend, setSymptomTrend] = useState(defaultSymptomData);
-  const [sleepTrend, setSleepTrend] = useState(defaultSleepData);
-  const [metrics, setMetrics] = useState(defaultMetrics);
-  const [recentReports, setRecentReports] = useState(defaultReports);
-  const [insights, setInsights] = useState(defaultInsights);
-  const [healthScore, setHealthScore] = useState(72);
-  const [streakCount, setStreakCount] = useState(14);
+  // Live data states — empty until real tracker/report data arrives; never fake defaults
+  const [symptomTrend, setSymptomTrend] = useState<SymptomPoint[]>([]);
+  const [sleepTrend, setSleepTrend] = useState<SleepPoint[]>([]);
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [recentReports, setRecentReports] = useState<ReportSummary[]>([]);
+  const [topInsights, setTopInsights] = useState<DashboardInsight[]>([]);
+  const [healthScore, setHealthScore] = useState<number | null>(null);
+  const [streakCount, setStreakCount] = useState(0);
 
   // Hidden print state summaries
   const [profileSummary, setProfileSummary] = useState<any>(null);
@@ -96,10 +105,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const searchParams = new URLSearchParams(window.location.search);
-      const isDemo = searchParams.get("demo") === "true" || localStorage.getItem("demoMode") === "true";
-      setDemoMode(isDemo);
-
       const survey = localStorage.getItem("echocare-survey");
       if (survey) {
         setSurveyCompleted(true);
@@ -115,14 +120,23 @@ export default function DashboardPage() {
       const analysis = localStorage.getItem("echocare-story-analysis");
       if (analysis) { try { setStoryAnalysis(JSON.parse(analysis)); } catch {} }
 
-      const feedback = localStorage.getItem("echocare-feedback-history");
-      if (feedback) { try { setFeedbackHistory(JSON.parse(feedback).slice(0, 3)); } catch {} }
+      backendJSON<{ system: string; doctor_name: string; rating: number; created_at?: string }[]>("/api/doctor-feedback")
+        .then(data => setFeedbackHistory(
+          data.slice(0, 3).map(f => ({
+            system: f.system,
+            doctor: f.doctor_name,
+            date: f.created_at ? new Date(f.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "",
+            rating: Math.round(f.rating / 2),
+          }))
+        ))
+        .catch(() => {});
 
-      // Set integrative top systems
-      setIntegrativeTopSystems([
-        { name: "Ayurveda", icon: "🌿", confidence: 78, color: "#22C55E" },
-        { name: "Naturopathy", icon: "🍃", confidence: 74, color: "#0F766E" },
-      ]);
+      // Top-3 AI insights (LE-RAG). Fails quietly to an empty state — never
+      // fabricated data — since the evidence gate may not be met yet, or the
+      // AI provider may be unavailable.
+      backendJSON<{ insights: DashboardInsight[] }>("/api/health-insights")
+        .then(res => setTopInsights(res.insights.slice(0, 3)))
+        .catch(() => {});
 
       // Load recent reports from localStorage
       const localReports = localStorage.getItem("echocare-diagnostic-reports");
@@ -139,83 +153,68 @@ export default function DashboardPage() {
         } catch {}
       }
 
-      // Fetch live tracker history if NOT in demo mode
-      if (!isDemo) {
-        fetch("/api/tracker")
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data) && data.length > 0) {
-              setStreakCount(data.length);
-              
-              // Process symptom trend (last 7 days)
+      // Fetch live tracker history
+      backendJSON<{ logs: TrackerLog[]; streak: number }>("/api/tracker/history")
+          .then(({ logs, streak }) => {
+            if (logs.length > 0) {
+              setStreakCount(streak);
+
+              // Process symptom trend (last 7 days) — gaps stay gaps, never invented numbers
               const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-              const processedSymptoms = data.slice(0, 7).reverse().map((log: any) => {
+              const processedSymptoms = logs.slice(0, 7).reverse().map(log => {
                 const dateObj = new Date(log.date);
                 const dayName = daysOfWeek[dateObj.getDay()];
                 return {
                   day: dayName,
-                  fatigue: Number(log.fatigue) || 5,
-                  pain: Number(log.joint_pain) || 3,
+                  fatigue: fatigueOf(log) ?? null,
+                  pain: painOf(log) ?? null,
                   mood: log.mood === "great" ? 9 : log.mood === "good" ? 7 : log.mood === "okay" ? 5 : log.mood === "low" ? 3 : 2
                 };
               });
               if (processedSymptoms.length > 0) setSymptomTrend(processedSymptoms);
 
               // Process sleep trend (last 7 days)
-              const processedSleep = data.slice(0, 7).reverse().map((log: any) => {
+              const processedSleep = logs.slice(0, 7).reverse().map(log => {
                 const dateObj = new Date(log.date);
                 const dayName = daysOfWeek[dateObj.getDay()];
                 return {
                   day: dayName,
-                  hours: Number(log.sleep_hours) || 7.0
+                  hours: sleepOf(log) ?? null
                 };
               });
               if (processedSleep.length > 0) setSleepTrend(processedSleep);
 
-              // Calculate averages
-              const latestLog = data[0];
-              const totalSleep = data.reduce((sum: number, curr: any) => sum + (Number(curr.sleep_hours) || 7.0), 0);
-              const totalWater = data.reduce((sum: number, curr: any) => sum + (Number(curr.water_intake) || 2.0), 0);
-              const avgSleep = (totalSleep / data.length).toFixed(1);
-              const avgWater = Math.round(totalWater / data.length);
+              // Calculate averages over whatever was actually logged
+              const sleepValues = logs.map(sleepOf).filter((v): v is number => v != null);
+              const waterValues = logs.map(waterOf).filter((v): v is number => v != null);
+              const avgSleep = sleepValues.length ? (sleepValues.reduce((a, b) => a + b, 0) / sleepValues.length).toFixed(1) : null;
+              const avgWater = waterValues.length ? Math.round(waterValues.reduce((a, b) => a + b, 0) / waterValues.length) : null;
 
-              // Live dynamic health score computation
-              const latestFatigue = Number(latestLog.fatigue) || 5;
-              const latestPain = Number(latestLog.joint_pain) || 3;
-              const latestSleep = Number(latestLog.sleep_hours) || 7.0;
+              // Live health score — missing fields contribute no penalty rather than a guessed one
+              const latestLog = logs[0];
+              const latestFatigue = fatigueOf(latestLog) ?? 0;
+              const latestPain = painOf(latestLog) ?? 0;
+              const latestSleep = sleepOf(latestLog) ?? 8.0;
               const score = Math.max(40, Math.min(100, Math.round(100 - (latestFatigue * 3 + latestPain * 3 + Math.abs(8.0 - latestSleep) * 4))));
               setHealthScore(score);
+
+              const latestWater = waterOf(latestLog);
+              const latestFatigueRaw = fatigueOf(latestLog);
 
               // Update metrics
               const updatedMetrics = [
                 { label: "Stress Level", value: latestLog.mood === "bad" ? "High" : latestLog.mood === "low" ? "High" : latestLog.mood === "okay" ? "Moderate" : "Low", icon: Zap, color: "#F59E0B", bg: "rgba(245,158,11,0.08)", trend: "Live", up: latestLog.mood !== "bad" },
-                { label: "Sleep Quality", value: avgSleep, max: "hrs", icon: Moon, color: "#8B5CF6", bg: "rgba(139,92,246,0.08)", trend: "Average", up: Number(avgSleep) >= 7 },
-                { label: "Water Intake", value: String(latestLog.water_intake || 0), max: "/8 cups", icon: Droplets, color: "#3B82F6", bg: "rgba(59,130,246,0.08)", trend: `Avg: ${avgWater}`, up: latestLog.water_intake >= 6 },
+                { label: "Sleep Quality", value: avgSleep ?? "–", max: "hrs", icon: Moon, color: "#8B5CF6", bg: "rgba(139,92,246,0.08)", trend: "Average", up: avgSleep != null && Number(avgSleep) >= 7 },
+                { label: "Water Intake", value: latestWater != null ? String(latestWater) : "–", max: "/8 cups", icon: Droplets, color: "#3B82F6", bg: "rgba(59,130,246,0.08)", trend: avgWater != null ? `Avg: ${avgWater}` : "No data", up: (latestWater ?? 0) >= 6 },
                 { label: "Mood", value: latestLog.mood.charAt(0).toUpperCase() + latestLog.mood.slice(1), icon: Smile, color: "#22C55E", bg: "rgba(34,197,94,0.08)", trend: "Latest", up: ["good", "great"].includes(latestLog.mood) },
-                { label: "Fatigue Level", value: `${latestLog.fatigue}/10`, icon: Activity, color: "#EF4444", bg: "rgba(239,68,68,0.08)", trend: "Latest", up: latestLog.fatigue <= 4 },
+                { label: "Fatigue Level", value: latestFatigueRaw != null ? `${latestFatigueRaw}/10` : "Not logged", icon: Activity, color: "#EF4444", bg: "rgba(239,68,68,0.08)", trend: "Latest", up: (latestFatigueRaw ?? 0) <= 4 },
               ];
               setMetrics(updatedMetrics);
-
-              // Generate live insights
-              const newInsights = [];
-              if (Number(avgSleep) < 6.5) {
-                newInsights.push({ text: "Average sleep is below 6.5 hours. Prioritize consistent sleep schedule.", type: "warning" as const });
-              } else {
-                newInsights.push({ text: "Great job maintaining healthy sleep patterns this week.", type: "success" as const });
-              }
-              if (latestLog.joint_pain >= 6) {
-                newInsights.push({ text: "High pain levels logged today. Keep movement gentle and drink water.", type: "warning" as const });
-              }
-              if (latestLog.water_intake < 6) {
-                newInsights.push({ text: "Hydration levels are lower than target. Aim for 8 cups daily.", type: "info" as const });
-              }
-              setInsights(newInsights);
             }
           })
           .catch(err => console.error("Failed to load logs:", err));
-      }
     }
-  }, [demoMode]);
+  }, []);
 
   const generateDoctorPDF = () => {
     window.print();
@@ -239,18 +238,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Demo banner */}
-        {demoMode && (
-          <div style={{ padding: "12px 20px", borderRadius: "12px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", display: "flex", alignItems: "center", gap: "12px" }}>
-            <Play size={14} color="#3B82F6" fill="#3B82F6" />
-            <span style={{ fontSize: "13px", color: "#1D4ED8", fontWeight: 600 }}>Demo Mode — Showing sample patient data</span>
-            <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto", color: "#3B82F6", fontSize: "12px" }} onClick={() => {
-              setDemoMode(false);
-              localStorage.removeItem("demoMode");
-            }}>Exit Demo</button>
-          </div>
-        )}
-
         {/* Survey prompt banner */}
         {!surveyCompleted && (
           <div style={{ padding: "18px 22px", borderRadius: "16px", background: "linear-gradient(135deg, rgba(15,118,110,0.08), rgba(20,184,166,0.04))", border: "1px solid rgba(15,118,110,0.25)", display: "flex", alignItems: "center", gap: "16px" }}>
@@ -271,28 +258,35 @@ export default function DashboardPage() {
             <HealthScoreRing score={healthScore} />
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--text-primary)" }}>Health Score</div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center", marginTop: "4px" }}>
-                <TrendingUp size={12} color="#16A34A" />
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#16A34A" }}>+5 pts this week</span>
-              </div>
+              {healthScore == null && (
+                <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Log today to see your score</div>
+              )}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px" }}>
-            {metrics.map((m, i) => (
-              <div key={i} className="metric-card">
-                <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: m.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <m.icon size={17} color={m.color} />
+          {metrics.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px" }}>
+              {metrics.map((m, i) => (
+                <div key={i} className="metric-card">
+                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: m.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <m.icon size={17} color={m.color} />
+                  </div>
+                  <div style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
+                    {m.value}<span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-muted)" }}>{m.max ?? ""}</span>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500 }}>{m.label}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "11px", fontWeight: 700, color: m.up ? "#16A34A" : "#DC2626" }}>
+                    {m.up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}{m.trend}
+                  </div>
                 </div>
-                <div style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
-                  {m.value}<span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-muted)" }}>{m.max ?? ""}</span>
-                </div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500 }}>{m.label}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "11px", fontWeight: 700, color: m.up ? "#16A34A" : "#DC2626" }}>
-                  {m.up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}{m.trend}
-                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="card" style={{ padding: "20px", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+              <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                Log a few days in the <Link href="/tracker" style={{ color: "#0F766E", fontWeight: 600 }}>Daily Tracker</Link> to see trends
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Charts */}
@@ -312,6 +306,11 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+            {symptomTrend.length === 0 ? (
+              <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", color: "var(--text-muted)" }}>
+                Log a few days in the <Link href="/tracker" style={{ color: "#0F766E", fontWeight: 600, marginLeft: "4px" }}>Daily Tracker</Link>&nbsp;to see trends
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={symptomTrend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -323,12 +322,18 @@ export default function DashboardPage() {
                 <Line type="monotone" dataKey="mood" stroke="#3B82F6" strokeWidth={2.5} dot={{ fill: "#3B82F6", r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
           <div className="card" style={{ padding: "24px" }}>
             <div style={{ marginBottom: "20px" }}>
               <div className="section-title">Sleep Quality</div>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>Weekly logs</div>
             </div>
+            {sleepTrend.length === 0 ? (
+              <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", color: "var(--text-muted)" }}>
+                Log a few days in the <Link href="/tracker" style={{ color: "#0F766E", fontWeight: 600, marginLeft: "4px" }}>Daily Tracker</Link>&nbsp;to see trends
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={sleepTrend}>
                 <defs>
@@ -344,6 +349,7 @@ export default function DashboardPage() {
                 <Area type="monotone" dataKey="hours" stroke="#8B5CF6" strokeWidth={2.5} fill="url(#sleepGrad)" dot={{ fill: "#8B5CF6", r: 3 }} />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -359,16 +365,25 @@ export default function DashboardPage() {
               <Link href="/insights" style={{ fontSize: "12px", color: "#0F766E", textDecoration: "none", fontWeight: 600 }}>View All</Link>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {insights.map((insight, i) => (
-                <div key={i} className={`alert alert-${insight.type}`} style={{ padding: "10px 12px", fontSize: "12px" }}>
-                  <AlertCircle size={12} style={{ flexShrink: 0 }} />{insight.text}
+              {topInsights.length > 0 ? (
+                topInsights.map(insight => (
+                  <EvidenceCard
+                    key={insight.id}
+                    compact
+                    title={insight.title}
+                    body={insight.observation}
+                    confidence={insight.confidence}
+                    lowConfidence={insight.low_confidence}
+                    evidenceSummary={insight.evidence_summary}
+                    excerpts={insight.evidence}
+                    provider={insight.provider}
+                  />
+                ))
+              ) : (
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  No insights yet — keep logging to build evidence.
                 </div>
-              ))}
-            </div>
-            <div style={{ marginTop: "14px", padding: "12px 14px", background: "rgba(15,118,110,0.06)", borderRadius: "10px", border: "1px solid rgba(15,118,110,0.12)" }}>
-              <div style={{ fontSize: "10px", fontWeight: 700, color: "#0F766E", marginBottom: "3px" }}>AI Dept Suggestion</div>
-              <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--text-primary)" }}>🏥 Rheumatology</div>
-              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>87% confidence · Based on symptom pattern</div>
+              )}
             </div>
           </div>
 
@@ -382,7 +397,7 @@ export default function DashboardPage() {
               <Link href="/reports" style={{ fontSize: "12px", color: "#0F766E", textDecoration: "none", fontWeight: 600 }}>View All</Link>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {recentReports.map((r, i) => (
+              {recentReports.length > 0 ? recentReports.map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "10px", background: "var(--background)", border: "1px solid var(--border)" }}>
                   <div style={{ width: "30px", height: "30px", borderRadius: "8px", background: "rgba(59,130,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <FileText size={13} color="#3B82F6" />
@@ -393,7 +408,11 @@ export default function DashboardPage() {
                   </div>
                   <div className={`badge badge-${r.status === "Analyzed" ? "success" : "primary"}`} style={{ fontSize: "10px" }}>{r.status}</div>
                 </div>
-              ))}
+              )) : (
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  No reports uploaded yet — <Link href="/reports" style={{ color: "#0F766E", fontWeight: 600 }}>upload one</Link>.
+                </div>
+              )}
             </div>
           </div>
 
@@ -438,7 +457,10 @@ export default function DashboardPage() {
             <Link href="/integrative" style={{ fontSize: "12px", color: "#0F766E", textDecoration: "none", fontWeight: 600 }}>Explore All →</Link>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            {integrativeTopSystems.map((sys, i) => (
+            {[
+              { name: "Ayurveda", icon: "🌿", color: "#22C55E" },
+              { name: "Naturopathy", icon: "🍃", color: "#0F766E" },
+            ].map((sys, i) => (
               <Link key={i} href="/integrative" style={{ textDecoration: "none" }}>
                 <div style={{ padding: "16px", borderRadius: "12px", background: `${sys.color}08`, border: `1px solid ${sys.color}25`, display: "flex", alignItems: "center", gap: "12px", transition: "all 0.2s", cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)"}
@@ -446,20 +468,9 @@ export default function DashboardPage() {
                   <div style={{ fontSize: "28px" }}>{sys.icon}</div>
                   <div>
                     <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)" }}>{sys.name}</div>
-                    <div style={{ fontSize: "12px", color: sys.color, fontWeight: 600 }}>{sys.confidence}% profile match</div>
+                    <div style={{ fontSize: "12px", color: sys.color, fontWeight: 600 }}>Explore options</div>
                   </div>
-                  <div style={{ marginLeft: "auto" }}>
-                    <div style={{ width: "36px", height: "36px" }}>
-                      <svg viewBox="0 0 36 36" width="36" height="36">
-                        <circle cx="18" cy="18" r="14" fill="none" stroke={`${sys.color}20`} strokeWidth="3" />
-                        <circle cx="18" cy="18" r="14" fill="none" stroke={sys.color} strokeWidth="3"
-                          strokeDasharray={`${2 * Math.PI * 14}`}
-                          strokeDashoffset={`${2 * Math.PI * 14 * (1 - sys.confidence / 100)}`}
-                          strokeLinecap="round" transform="rotate(-90 18 18)" />
-                        <text x="18" y="22" textAnchor="middle" fontSize="9" fontWeight="800" fill={sys.color}>{sys.confidence}%</text>
-                      </svg>
-                    </div>
-                  </div>
+                  <ChevronRight size={16} color={sys.color} style={{ marginLeft: "auto" }} />
                 </div>
               </Link>
             ))}
@@ -482,7 +493,13 @@ export default function DashboardPage() {
             </div>
             {surveyCompleted ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {[{ label: "Profile", status: "Complete", color: "#22C55E" }, { label: "Symptoms", status: "5 logged", color: "#0F766E" }, { label: "Lifestyle", status: "Assessed", color: "#3B82F6" }, { label: "Mental Wellbeing", status: "Assessed", color: "#8B5CF6" }, { label: "Medical History", status: "Complete", color: "#F59E0B" }].map((item, i) => (
+                {[
+                  { label: "Profile", status: "Complete", color: "#22C55E" },
+                  { label: "Symptoms", status: `${Array.isArray(surveyData?.symptoms) ? surveyData.symptoms.length : 0} logged`, color: "#0F766E" },
+                  { label: "Lifestyle", status: "Assessed", color: "#3B82F6" },
+                  { label: "Mental Wellbeing", status: "Assessed", color: "#8B5CF6" },
+                  { label: "Medical History", status: "Complete", color: "#F59E0B" },
+                ].map((item, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: i < 4 ? "1px solid var(--border)" : "none" }}>
                     <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>{item.label}</span>
                     <span style={{ fontSize: "12px", fontWeight: 700, color: item.color, display: "flex", alignItems: "center", gap: "4px" }}>
@@ -562,19 +579,19 @@ export default function DashboardPage() {
                 <td style={{ padding: "4px 0", fontWeight: "bold", width: "15%" }}>Name:</td>
                 <td style={{ padding: "4px 0" }}>{user?.name || "Patient"}</td>
                 <td style={{ padding: "4px 0", fontWeight: "bold", width: "15%" }}>Date of Birth:</td>
-                <td style={{ padding: "4px 0" }}>{profileSummary?.dob || "January 15, 1995"}</td>
+                <td style={{ padding: "4px 0" }}>{profileSummary?.dob || "Not provided"}</td>
               </tr>
               <tr>
                 <td style={{ padding: "4px 0", fontWeight: "bold" }}>Email:</td>
                 <td style={{ padding: "4px 0" }}>{user?.email || "Email"}</td>
                 <td style={{ padding: "4px 0", fontWeight: "bold" }}>Gender:</td>
-                <td style={{ padding: "4px 0" }}>{profileSummary?.gender || "Male"}</td>
+                <td style={{ padding: "4px 0" }}>{profileSummary?.gender || "Not provided"}</td>
               </tr>
               <tr>
                 <td style={{ padding: "4px 0", fontWeight: "bold" }}>Blood Type:</td>
-                <td style={{ padding: "4px 0" }}>{profileSummary?.bloodType || "O+"}</td>
+                <td style={{ padding: "4px 0" }}>{profileSummary?.bloodType || "Not provided"}</td>
                 <td style={{ padding: "4px 0", fontWeight: "bold" }}>Height/Weight:</td>
-                <td style={{ padding: "4px 0" }}>{profileSummary?.heightWeight || "175 cm / 72 kg"}</td>
+                <td style={{ padding: "4px 0" }}>{profileSummary?.heightWeight || "Not provided"}</td>
               </tr>
               {profileSummary?.emergencyName && (
                 <tr>

@@ -1,7 +1,7 @@
 "use client";
 import AppLayout from "@/components/AppLayout";
 import { useState, useEffect, useMemo } from "react";
-import { BACKEND_URL, fetchFromBackend } from "@/lib/backend";
+import { BACKEND_URL, BackendError, backendJSON, fetchFromBackend } from "@/lib/backend";
 import { getStoredToken } from "@/lib/auth";
 import { 
   ShieldAlert, 
@@ -38,77 +38,8 @@ import {
   ReferenceDot
 } from "recharts";
 
-// 32 Weeks Timeline Database
-const timelineMasterData = [
-  { week: "Wk 1", fatigue: 4, jointPain: 2, brainFog: 3, dizziness: 2 },
-  { week: "Wk 2", fatigue: 5, jointPain: 3, brainFog: 4, dizziness: 2 },
-  { week: "Wk 3", fatigue: 5, jointPain: 3, brainFog: 4, dizziness: 2 },
-  { week: "Wk 4", fatigue: 6, jointPain: 4, brainFog: 5, dizziness: 3 },
-  { week: "Wk 5", fatigue: 6, jointPain: 4, brainFog: 5, dizziness: 3, event: "Primary CBC (Normal)" },
-  { week: "Wk 6", fatigue: 7, jointPain: 5, brainFog: 6, dizziness: 3 },
-  { week: "Wk 7", fatigue: 7, jointPain: 5, brainFog: 6, dizziness: 4 },
-  { week: "Wk 8", fatigue: 8, jointPain: 6, brainFog: 7, dizziness: 4 },
-  { week: "Wk 9", fatigue: 8, jointPain: 6, brainFog: 7, dizziness: 4 },
-  { week: "Wk 10", fatigue: 7, jointPain: 5, brainFog: 6, dizziness: 3 },
-  { week: "Wk 11", fatigue: 7, jointPain: 5, brainFog: 6, dizziness: 3 },
-  { week: "Wk 12", fatigue: 7, jointPain: 6, brainFog: 7, dizziness: 4, event: "Thyroid Panel (TSH Normal)" },
-  { week: "Wk 13", fatigue: 8, jointPain: 7, brainFog: 7, dizziness: 5 },
-  { week: "Wk 14", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 15", fatigue: 9, jointPain: 8, brainFog: 8, dizziness: 6 },
-  { week: "Wk 16", fatigue: 9, jointPain: 8, brainFog: 9, dizziness: 6 },
-  { week: "Wk 17", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 18", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 19", fatigue: 7, jointPain: 6, brainFog: 7, dizziness: 4 },
-  { week: "Wk 20", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5, event: "Brain MRI (Normal)" },
-  { week: "Wk 21", fatigue: 9, jointPain: 8, brainFog: 9, dizziness: 6 },
-  { week: "Wk 22", fatigue: 9, jointPain: 8, brainFog: 9, dizziness: 6 },
-  { week: "Wk 23", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 24", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 25", fatigue: 7, jointPain: 6, brainFog: 7, dizziness: 4 },
-  { week: "Wk 26", fatigue: 7, jointPain: 6, brainFog: 7, dizziness: 4 },
-  { week: "Wk 27", fatigue: 8, jointPain: 7, brainFog: 8, dizziness: 5 },
-  { week: "Wk 28", fatigue: 8, jointPain: 8, brainFog: 8, dizziness: 5 },
-  { week: "Wk 29", fatigue: 9, jointPain: 8, brainFog: 9, dizziness: 6, event: "Consultation 3 (All Normal)" },
-  { week: "Wk 30", fatigue: 9, jointPain: 9, brainFog: 9, dizziness: 7 },
-  { week: "Wk 31", fatigue: 8, jointPain: 8, brainFog: 8, dizziness: 6 },
-  { week: "Wk 32", fatigue: 8, jointPain: 8, brainFog: 8, dizziness: 6, event: "Today (Symptoms Persist)" },
-];
-
-const testMismatchDb: Record<string, { name: string; date: string; coverage: number; severity: string; discrepancy: string; advice: string }> = {
-  "Wk 5": {
-    name: "Primary CBC (Complete Blood Count)",
-    date: "Dec 05, 2025",
-    coverage: 33,
-    severity: "Fatigue: 6/10 · Joint Pain: 4/10 · Brain Fog: 5/10",
-    discrepancy: "Your GP closed the case as 'No Anemia' because Hemoglobin was in the normal range. However, Serum Ferritin (which checks actual iron stores) and Active B12 were completely omitted. You can have severely depleted cellular iron stores without showing visible anemia on standard screens.",
-    advice: "Do not accept 'normal blood tests' as the end of the line. Request a full Iron Panel + Serum Ferritin to check your body's cellular iron reserve levels."
-  },
-  "Wk 12": {
-    name: "Thyroid Panel (TSH Screen)",
-    date: "Jan 22, 2026",
-    coverage: 25,
-    severity: "Fatigue: 7/10 · Joint Pain: 6/10 · Brain Fog: 7/10",
-    discrepancy: "Your TSH screen returned normal (2.1 mIU/L). No free metabolic hormones (Free T4, Free T3) or thyroid antibodies (TPOAb, TgAb) were checked. A normal TSH does not rule out subclinical thyroid deficiency or early-stage autoimmune Hashimoto's thyroiditis.",
-    advice: "Ask your doctor to run a Complete Thyroid Panel—specifically requesting Free T3, Free T4, and Thyroid Peroxidase (TPO) Antibodies."
-  },
-  "Wk 20": {
-    name: "Brain MRI Scan (Lying Flat)",
-    date: "Mar 20, 2026",
-    coverage: 30,
-    severity: "Fatigue: 8/10 · Brain Fog: 8/10 · Dizziness: 5/10",
-    discrepancy: "Your brain structure is healthy. However, a structural, lying-flat MRI scan cannot diagnose autonomic blood pooling, orthostatic heart rate spikes (POTS), or subclinical systemic inflammation.",
-    advice: "If your dizziness and brain fog worsen when standing up, request autonomic testing (NASA Lean stand check or Tilt Table Test) instead of structural brain scans."
-  },
-  "Wk 29": {
-    name: "Consultation 3 (Consensus Check)",
-    date: "Jun 18, 2026",
-    coverage: 20,
-    severity: "Fatigue: 9/10 · Joint Pain: 8/10 · Brain Fog: 9/10 · Dizziness: 6/10",
-    discrepancy: "Three separate doctors concluded normal tests mean 'no physical disease,' referring your case to counseling. However, crucial testing layers (metabolic profile, immune markers, autonomic heart rate variance) were completely left unchecked.",
-    advice: "Keep the case open. Trigger case escalation and request a diagnostic referral to a Rheumatologist or Autonomic Neurologist."
-  }
-};
-
+// Reference knowledge only (not patient data): commonly-discussed lab markers
+// per panel, used to suggest what a report may be missing.
 const labMarkerCatalog = [
   { name: "Hemoglobin", reason: "Core CBC anemia screen found in most basic blood reports.", id: "hemoglobin", aliases: ["hemoglobin", "haemoglobin", "hgb", "hb"], panels: ["blood"] },
   { name: "Red Cell Indices", reason: "MCV, MCH, and MCHC help classify hidden anemia patterns.", id: "rbc-indices", aliases: ["mcv", "mch", "mchc", "red cell", "rbc"], panels: ["blood"] },
@@ -167,33 +98,6 @@ const subjectiveTranslators = [
   }
 ];
 
-const initialDoctorOpinions = [
-  {
-    doctor: "Dr. A. Johnson",
-    specialty: "Primary Care (GP)",
-    verdict: "Normal / Psychosomatic",
-    notes: "Basic blood work normal. Patient reports high stress. Suggested counseling and mild anxiety medication.",
-    date: "Nov 12, 2025",
-    ignoredSymptoms: "Persistent joint swelling, fluctuating body temperature."
-  },
-  {
-    doctor: "Dr. S. Mehta",
-    specialty: "Endocrinologist",
-    verdict: "Healthy / Case Closed",
-    notes: "TSH is 2.1 which is perfectly normal. No endocrine disorder present. Advised sleep hygiene.",
-    date: "Dec 18, 2025",
-    ignoredSymptoms: "Daytime exhaustion despite 9 hours sleep, dry skin, cold sensitivity."
-  },
-  {
-    doctor: "Dr. K. Williams",
-    specialty: "Neurologist",
-    verdict: "No Neurological Cause",
-    notes: "Brain MRI normal. Standard physical reflex exam normal. No evidence of MS or neuropathy. Refer back to GP.",
-    date: "Feb 26, 2026",
-    ignoredSymptoms: "Sensation of head being under water (brain fog), dizziness upon standing."
-  }
-];
-
 type SurveyContext = Record<string, string | string[] | number | undefined>;
 
 type StoryAnalysisContext = Partial<{
@@ -229,6 +133,45 @@ type DiagnosticReport = {
   extractedText?: string;
   summary?: string;
   error?: string;
+};
+
+type ReportDoc = {
+  _id: string;
+  filename: string;
+  doctor?: string;
+  specialty?: string;
+  report_type?: string;
+  report_date?: string;
+  extracted_text?: string;
+  extraction_status?: string;
+};
+
+type DoctorOpinion = { id: string; doctor: string; specialty: string; date: string; opinion_text: string; created_at: string };
+
+type Contradiction = { a_id: string; b_id: string; contradicts: boolean; summary: string; checked_at: string };
+
+type Gap = { theme: string; weeks_present: number; first_seen: string; last_seen: string; addressed_by: string[] };
+
+type GuardState = {
+  doctor_opinions: DoctorOpinion[];
+  requested_markers: string[];
+  escalated: boolean;
+  escalated_at: string | null;
+  contradictions: Contradiction[];
+};
+
+type BriefInsight = { theme: string; title: string; observation: string; confidence: number; low_confidence: boolean };
+
+type BriefData = {
+  case_ref: string;
+  generated_at: string;
+  escalated: boolean;
+  gaps: Gap[];
+  contradictions: Contradiction[];
+  requested_markers: string[];
+  doctor_opinions: DoctorOpinion[];
+  top_insights: BriefInsight[];
+  tracker_averages: { days_logged: number; energy: number | null; pain: number | null; stress: number | null; sleep_hours: number | null; water_glasses: number | null };
 };
 
 type SymptomSlot = { key: string; label: string; color: string; bg: string };
@@ -469,11 +412,140 @@ function buildLabAudits(reports: DiagnosticReport[]): LabAudit[] {
     });
 }
 
+function mapReportDoc(doc: ReportDoc): DiagnosticReport {
+  const extracted = doc.extracted_text;
+  return {
+    id: doc._id,
+    backendId: doc._id,
+    name: doc.filename,
+    doctor: doc.doctor || "",
+    specialty: doc.specialty || "",
+    reportType: doc.report_type || "Lab report",
+    reportDate: doc.report_date || "",
+    status: doc.extraction_status === "failed" ? "error" : extracted ? "analyzed" : "uploaded",
+    extractedText: extracted,
+    summary: summarizeExtractedText(extracted),
+  };
+}
+
+function humanizeTheme(theme: string) {
+  return theme.split("_").map(w => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
+function formatIsoDate(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function GapCard({ gap }: { gap: Gap }) {
+  return (
+    <div style={{ padding: "16px", borderRadius: "14px", border: "1.5px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--text-primary)" }}>{humanizeTheme(gap.theme)}</span>
+        <span className="badge badge-warning" style={{ fontSize: "10px" }}>Present {gap.weeks_present}/3 weeks</span>
+      </div>
+      <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+        Logged every week for the last 3 weeks with no report or doctor opinion addressing it yet.
+      </p>
+      <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 600, borderTop: "1px solid var(--border)", paddingTop: "8px" }}>
+        Based on: your tracker/story evidence ({formatIsoDate(gap.first_seen)} – {formatIsoDate(gap.last_seen)})
+      </div>
+    </div>
+  );
+}
+
+function ContradictionCard({ contradiction, doctorLabel }: { contradiction: Contradiction; doctorLabel: (id: string) => string }) {
+  return (
+    <div style={{ padding: "16px", borderRadius: "14px", border: "1.5px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "13.5px", fontWeight: 800, color: "var(--text-primary)" }}>{doctorLabel(contradiction.a_id)} vs {doctorLabel(contradiction.b_id)}</span>
+        <span className={`badge ${contradiction.contradicts ? "badge-danger" : "badge-success"}`} style={{ fontSize: "10px" }}>
+          {contradiction.contradicts ? "Conflicting" : "Consistent"}
+        </span>
+      </div>
+      <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>{contradiction.summary}</p>
+      <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 600, borderTop: "1px solid var(--border)", paddingTop: "8px" }}>
+        Based on: 2 logged doctor opinions · checked {formatIsoDate(contradiction.checked_at)}
+      </div>
+      <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", margin: 0, fontStyle: "italic" }}>
+        This is a discussion guide for your clinician, not a diagnosis.
+      </p>
+    </div>
+  );
+}
+
+type LegacyOpinion = { doctor?: string; specialty?: string; verdict?: string; notes?: string; ignoredSymptoms?: string; date?: string };
+
+/** One-time migration off the four localStorage keys this page used to own
+ * (see task-20-brief.md). Only writes to the backend when the backend
+ * document is still empty, so a second run (or a second tab) never
+ * duplicates data. Always clears the legacy keys afterward, including the
+ * two that never needed a backend write (reports were already saved server
+ * side at upload time; story analysis is now always read live from
+ * /api/story/latest). Returns a one-line notice when it actually moved
+ * something, else null. */
+async function migrateLocalStorageIfNeeded(current: GuardState): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+
+  const legacyOpinions = readStoredJson<LegacyOpinion[]>("echocare-doctor-opinions", []);
+  const legacyMarkers = readStoredJson<string[]>("echocare-requested-markers", []);
+  const legacyEscalated = window.localStorage.getItem("echocare-case-escalated");
+  const hasLegacyData = legacyOpinions.length > 0 || legacyMarkers.length > 0 || legacyEscalated !== null;
+
+  let moved = false;
+  if (hasLegacyData) {
+    const backendEmpty = current.doctor_opinions.length === 0 && current.requested_markers.length === 0 && !current.escalated;
+    if (backendEmpty) {
+      for (const op of legacyOpinions) {
+        if (!op.doctor || !op.specialty) continue;
+        const opinionText = [op.verdict, op.notes, op.ignoredSymptoms ? `Ignored: ${op.ignoredSymptoms}` : ""]
+          .filter(Boolean)
+          .join(". ") || "No details recorded.";
+        try {
+          await backendJSON("/api/diagnostic-guard/opinions", {
+            method: "POST",
+            body: JSON.stringify({ doctor: op.doctor, specialty: op.specialty, opinion_text: opinionText, date: op.date }),
+          });
+          moved = true;
+        } catch {
+          // Best-effort: keep migrating the rest rather than aborting.
+        }
+      }
+      if (legacyMarkers.length > 0) {
+        try {
+          await backendJSON("/api/diagnostic-guard/markers", { method: "PUT", body: JSON.stringify({ markers: legacyMarkers }) });
+          moved = true;
+        } catch {
+          // ignore
+        }
+      }
+      if (legacyEscalated === "true") {
+        try {
+          await backendJSON("/api/diagnostic-guard/escalate", { method: "POST" });
+          moved = true;
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  window.localStorage.removeItem("echocare-doctor-opinions");
+  window.localStorage.removeItem("echocare-requested-markers");
+  window.localStorage.removeItem("echocare-case-escalated");
+  window.localStorage.removeItem("echocare-diagnostic-reports");
+  window.localStorage.removeItem("echocare-story-analysis");
+
+  return moved ? "Moved your saved notes to your account." : null;
+}
+
 export default function RedesignedDiagnosticGuard() {
-  const [surveyData, setSurveyData] = useState<SurveyContext>(() => readStoredJson<SurveyContext>("echocare-survey", {}));
-  const [storyAnalysis, setStoryAnalysis] = useState<StoryAnalysisContext>(() => readStoredJson<StoryAnalysisContext>("echocare-story-analysis", {}));
+  const [surveyData, setSurveyData] = useState<SurveyContext>({});
+  const [storyAnalysis, setStoryAnalysis] = useState<StoryAnalysisContext>({});
   const [trackerLogs, setTrackerLogs] = useState<TrackerLog[]>([]);
-  const [uploadedReports, setUploadedReports] = useState<DiagnosticReport[]>(() => readStoredJson<DiagnosticReport[]>("echocare-diagnostic-reports", []));
+  const [uploadedReports, setUploadedReports] = useState<DiagnosticReport[]>([]);
   const [reportDraft, setReportDraft] = useState({ doctor: "", specialty: "", reportType: "Lab report", reportDate: "" });
   const [uploadingReport, setUploadingReport] = useState(false);
   const [reportUploadError, setReportUploadError] = useState("");
@@ -488,20 +560,27 @@ export default function RedesignedDiagnosticGuard() {
 
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>("Wk 12");
   const [activeAuditorIdx, setActiveAuditorIdx] = useState(0);
-  const [requestedMarkers, setRequestedMarkers] = useState<string[]>(() => readStoredJson<string[]>("echocare-requested-markers", []));
+  const [requestedMarkers, setRequestedMarkers] = useState<string[]>([]);
 
-  const [doctorOpinions, setDoctorOpinions] = useState<typeof initialDoctorOpinions>(() => readStoredJson<typeof initialDoctorOpinions>("echocare-doctor-opinions", []));
+  const [doctorOpinions, setDoctorOpinions] = useState<DoctorOpinion[]>([]);
   const [showOpinionForm, setShowOpinionForm] = useState(false);
-  const [newDoc, setNewDoc] = useState({ name: "", specialty: "", verdict: "", notes: "", ignored: "", date: "" });
+  const [newDoc, setNewDoc] = useState({ doctor: "", specialty: "", opinion_text: "", date: "" });
   const [savingDoc, setSavingDoc] = useState(false);
+  const [opinionError, setOpinionError] = useState("");
+
+  const [gaps, setGaps] = useState<Gap[]>([]);
+  const [contradictions, setContradictions] = useState<Contradiction[]>([]);
+  const [checkingContradictions, setCheckingContradictions] = useState(false);
+  const [contradictionError, setContradictionError] = useState("");
+  const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
 
   const [searchTranslation, setSearchTranslation] = useState("");
   const [activeTranslationIdx, setActiveTranslationIdx] = useState<number | null>(0);
-  const [caseEscalated, setCaseEscalated] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem("echocare-case-escalated") !== "false";
-  });
+  const [caseEscalated, setCaseEscalated] = useState(false);
   const [showBriefModal, setShowBriefModal] = useState(false);
+  const [brief, setBrief] = useState<BriefData | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState("");
 
   const symptomSlots = useMemo(() => buildSymptomSlots(surveyData, storyAnalysis), [surveyData, storyAnalysis]);
   const patientTimeline = useMemo(
@@ -523,9 +602,16 @@ export default function RedesignedDiagnosticGuard() {
   const patientPainPoints = Array.isArray(storyAnalysis.painPoints) ? storyAnalysis.painPoints : [];
   const patientDetectedSymptoms = symptomSlots.map(slot => slot.label);
   const patientDuration = patientTimeline.length >= 8 ? "8 timeline points" : `${patientTimeline.length} timeline points`;
-  const activeGapCount = Object.keys(mismatchAudits).length + requestedMarkers.length;
+  const activeGapCount = gaps.length + requestedMarkers.length;
+  const opinionById = useMemo(() => Object.fromEntries(doctorOpinions.map(o => [o.id, o])), [doctorOpinions]);
+  const doctorLabel = (id: string) => {
+    const opinion = opinionById[id];
+    return opinion ? `${opinion.doctor} (${opinion.specialty})` : "Unknown opinion";
+  };
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadBackendContext = async () => {
       try {
         const [surveyRes, storyRes, trackerRes] = await Promise.all([
@@ -542,12 +628,7 @@ export default function RedesignedDiagnosticGuard() {
         if (storyRes.ok) {
           const story = await storyRes.json();
           const analysis = story?.analysis || story?.ai_analysis;
-          if (analysis && typeof analysis === "object") {
-            setStoryAnalysis(analysis);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("echocare-story-analysis", JSON.stringify(analysis));
-            }
-          }
+          if (analysis && typeof analysis === "object") setStoryAnalysis(analysis);
         }
 
         if (trackerRes.ok) {
@@ -555,59 +636,123 @@ export default function RedesignedDiagnosticGuard() {
           const logs = Array.isArray(tracker) ? tracker : tracker?.logs;
           if (Array.isArray(logs)) setTrackerLogs(logs);
         }
+
+        const [reportsData, guardData] = await Promise.all([
+          backendJSON<ReportDoc[]>("/api/story/reports").catch(() => []),
+          backendJSON<GuardState>("/api/diagnostic-guard").catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        setUploadedReports((reportsData || []).map(mapReportDoc));
+
+        const guard: GuardState = guardData ?? { doctor_opinions: [], requested_markers: [], escalated: false, escalated_at: null, contradictions: [] };
+        setDoctorOpinions(guard.doctor_opinions);
+        setRequestedMarkers(guard.requested_markers);
+        setCaseEscalated(guard.escalated);
+        setContradictions(guard.contradictions);
+
+        const notice = await migrateLocalStorageIfNeeded(guard);
+        if (!cancelled && notice) setMigrationNotice(notice);
+
+        const gapsResult = await backendJSON<{ gaps: Gap[] }>("/api/diagnostic-guard/gaps").catch(() => ({ gaps: [] }));
+        if (!cancelled) setGaps(gapsResult.gaps);
       } catch {
-        // Local storage context keeps Diagnostic Guard usable when the API is offline.
+        // Keep the page usable even if the backend is briefly unreachable.
       }
     };
 
     loadBackendContext();
+    return () => { cancelled = true; };
   }, []);
 
-  const handleToggleEscalation = () => {
+  useEffect(() => {
+    if (!showBriefModal) return;
+    let cancelled = false;
+    setBriefLoading(true);
+    setBriefError("");
+    backendJSON<BriefData>("/api/diagnostic-guard/brief")
+      .then(data => { if (!cancelled) setBrief(data); })
+      .catch(error => { if (!cancelled) setBriefError(error instanceof Error ? error.message : "Could not load the advocacy brief."); })
+      .finally(() => { if (!cancelled) setBriefLoading(false); });
+    return () => { cancelled = true; };
+  }, [showBriefModal]);
+
+  const handleToggleEscalation = async () => {
     const nextState = !caseEscalated;
     setCaseEscalated(nextState);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("echocare-case-escalated", String(nextState));
+    try {
+      await backendJSON(`/api/diagnostic-guard/escalate`, { method: nextState ? "POST" : "DELETE" });
+    } catch {
+      setCaseEscalated(!nextState);
     }
   };
 
-  const handleToggleMarker = (markerName: string) => {
-    let nextMarkers = [...requestedMarkers];
-    if (nextMarkers.includes(markerName)) {
-      nextMarkers = nextMarkers.filter(m => m !== markerName);
-    } else {
-      nextMarkers.push(markerName);
-    }
+  const handleToggleMarker = async (markerName: string) => {
+    const previous = requestedMarkers;
+    const nextMarkers = previous.includes(markerName)
+      ? previous.filter(m => m !== markerName)
+      : [...previous, markerName];
     setRequestedMarkers(nextMarkers);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("echocare-requested-markers", JSON.stringify(nextMarkers));
+    try {
+      await backendJSON("/api/diagnostic-guard/markers", { method: "PUT", body: JSON.stringify({ markers: nextMarkers }) });
+    } catch {
+      setRequestedMarkers(previous);
     }
   };
 
-  const handleAddOpinion = (e: React.FormEvent) => {
+  const handleAddOpinion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDoc.name || !newDoc.specialty || !newDoc.verdict) return;
+    if (!newDoc.doctor || !newDoc.specialty || !newDoc.opinion_text) return;
     setSavingDoc(true);
-
-    const added = {
-      doctor: newDoc.name,
-      specialty: newDoc.specialty,
-      verdict: newDoc.verdict,
-      notes: newDoc.notes || "Standard exam check normal.",
-      date: newDoc.date || new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-      ignoredSymptoms: newDoc.ignored || "Fatigue patterns ignored."
-    };
-
-    const updated = [...doctorOpinions, added];
-    setTimeout(() => {
-      setDoctorOpinions(updated);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("echocare-doctor-opinions", JSON.stringify(updated));
-      }
-      setNewDoc({ name: "", specialty: "", verdict: "", notes: "", ignored: "", date: "" });
+    setOpinionError("");
+    try {
+      const created = await backendJSON<DoctorOpinion>("/api/diagnostic-guard/opinions", {
+        method: "POST",
+        body: JSON.stringify({
+          doctor: newDoc.doctor,
+          specialty: newDoc.specialty,
+          opinion_text: newDoc.opinion_text,
+          date: newDoc.date || undefined,
+        }),
+      });
+      setDoctorOpinions(prev => [...prev, created]);
+      setNewDoc({ doctor: "", specialty: "", opinion_text: "", date: "" });
       setShowOpinionForm(false);
+    } catch (error) {
+      setOpinionError(error instanceof Error ? error.message : "Could not save this opinion.");
+    } finally {
       setSavingDoc(false);
-    }, 600);
+    }
+  };
+
+  const handleDeleteOpinion = async (opinionId: string) => {
+    const previous = doctorOpinions;
+    setDoctorOpinions(previous.filter(o => o.id !== opinionId));
+    setContradictions(prev => prev.filter(c => c.a_id !== opinionId && c.b_id !== opinionId));
+    try {
+      await backendJSON(`/api/diagnostic-guard/opinions/${opinionId}`, { method: "DELETE" });
+    } catch {
+      setDoctorOpinions(previous);
+    }
+  };
+
+  const handleCheckContradictions = async () => {
+    setCheckingContradictions(true);
+    setContradictionError("");
+    try {
+      const result = await backendJSON<{ contradictions: Contradiction[] }>("/api/diagnostic-guard/contradictions/check", { method: "POST" });
+      setContradictions(result.contradictions);
+    } catch (error) {
+      if (error instanceof BackendError && error.status === 503) {
+        setContradictionError("AI contradiction checks are temporarily unavailable. Your opinions are saved.");
+      } else if (error instanceof BackendError && error.status === 429) {
+        setContradictionError("Too many contradiction checks — please wait a moment and try again.");
+      } else {
+        setContradictionError(error instanceof Error ? error.message : "Could not check for contradictions.");
+      }
+    } finally {
+      setCheckingContradictions(false);
+    }
   };
 
   const handleLocalReportAttach = async (files: FileList | null) => {
@@ -675,7 +820,6 @@ export default function RedesignedDiagnosticGuard() {
     }
 
     setUploadedReports(nextReports);
-    if (typeof window !== "undefined") localStorage.setItem("echocare-diagnostic-reports", JSON.stringify(nextReports));
     setUploadingReport(false);
   };
 
@@ -707,7 +851,16 @@ export default function RedesignedDiagnosticGuard() {
       subtitle="Expose un-investigated gaps, cross-check doctor contradictions, and build clinical evidence."
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "32px", maxWidth: "1100px", margin: "0 auto", paddingBottom: "60px" }}>
-        
+
+        {migrationNotice && (
+          <div style={{ padding: "12px 16px", borderRadius: "10px", background: "rgba(15,118,110,0.08)", border: "1px solid rgba(15,118,110,0.2)", color: "#0F766E", fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+            <span>{migrationNotice}</span>
+            <button onClick={() => setMigrationNotice(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#0F766E" }}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* 1. PROTOCOL STATUS CARD */}
         <div className="card" style={{
           padding: "32px",
@@ -816,7 +969,7 @@ export default function RedesignedDiagnosticGuard() {
 
           <label style={{ border: "1.5px dashed var(--border)", borderRadius: "14px", padding: "18px", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", cursor: "pointer", color: "#0F766E", fontSize: "13px", fontWeight: 750, background: "var(--background)" }}>
             <Upload size={16} />
-            {uploadingReport ? "Uploading and extracting PDF text..." : "Attach multiple PDF reports for Cloudinary-backed analysis"}
+            {uploadingReport ? "Uploading and extracting PDF text..." : "Attach multiple PDF reports for analysis"}
             <input type="file" multiple accept=".pdf,application/pdf" disabled={uploadingReport} style={{ display: "none" }} onChange={e => { void handleLocalReportAttach(e.target.files); e.currentTarget.value = ""; }} />
           </label>
           {reportUploadError && (
@@ -974,6 +1127,28 @@ export default function RedesignedDiagnosticGuard() {
           ) : (
             <div style={{ padding: "20px", textAlign: "center", border: "1.5px dashed #E2E8F0", borderRadius: "12px", color: "var(--text-secondary)", fontSize: "13px" }}>
               💡 Select any orange test dot on the timeline graph to view why standard findings conflicted with your actual symptoms.
+            </div>
+          )}
+        </div>
+
+        {/* UNRESOLVED SYMPTOM GAPS (server-detected, Task 19) */}
+        <div className="card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "20px" }}>
+          <div>
+            <h3 style={{ fontSize: "17px", fontWeight: 800, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+              <AlertTriangle size={18} color="#EA580C" />
+              Unresolved Symptom Gaps
+            </h3>
+            <p style={{ fontSize: "13.5px", color: "var(--text-secondary)", marginTop: "4px" }}>
+              Symptoms you have logged every week for the last 3 weeks that no uploaded report or doctor opinion has addressed yet.
+            </p>
+          </div>
+          {gaps.length === 0 ? (
+            <div style={{ padding: "18px", borderRadius: "12px", background: "var(--background)", color: "var(--text-secondary)", fontSize: "13px", border: "1px solid var(--border)" }}>
+              No unresolved symptom gaps detected yet. Keep logging your daily tracker to build this picture.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px" }}>
+              {gaps.map(gap => <GapCard key={gap.theme} gap={gap} />)}
             </div>
           )}
         </div>
@@ -1177,36 +1352,40 @@ export default function RedesignedDiagnosticGuard() {
           {showOpinionForm && (
             <form onSubmit={handleAddOpinion} style={{ padding: "24px", borderRadius: "16px", background: "var(--background)", border: "1.5px solid var(--border)", display: "flex", flexDirection: "column", gap: "16px" }} className="animate-scale-in">
               <div style={{ fontSize: "14px", fontWeight: 750, color: "var(--text-primary)", borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>Enter Doctor Opinion</div>
-              
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Doctor Name</label>
-                  <input type="text" required placeholder="e.g. Dr. Roberts" value={newDoc.name} onChange={e => setNewDoc({...newDoc, name: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
+                  <input type="text" required placeholder="e.g. Dr. Roberts" value={newDoc.doctor} onChange={e => setNewDoc({...newDoc, doctor: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
                 </div>
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Specialty</label>
                   <input type="text" required placeholder="e.g. Rheumatologist" value={newDoc.specialty} onChange={e => setNewDoc({...newDoc, specialty: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Verdict / Diagnosis</label>
-                  <input type="text" required placeholder="e.g. Chronic Fatigue" value={newDoc.verdict} onChange={e => setNewDoc({...newDoc, verdict: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
-                </div>
-                <div className="form-group">
                   <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Consultation Date</label>
-                  <input type="text" placeholder="e.g. Mar 2026" value={newDoc.date} onChange={e => setNewDoc({...newDoc, date: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
+                  <input type="date" value={newDoc.date} onChange={e => setNewDoc({...newDoc, date: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Somatic Indicators Ignored</label>
-                  <input type="text" placeholder="e.g. joint stiffness, postural dizziness" value={newDoc.ignored} onChange={e => setNewDoc({...newDoc, ignored: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Clinical Decision Rationale</label>
-                  <input type="text" placeholder="e.g. Normal MRI, referred to sleep coach" value={newDoc.notes} onChange={e => setNewDoc({...newDoc, notes: e.target.value})} className="form-input" style={{ fontSize: "13px" }} />
-                </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: "11px", fontWeight: 700 }}>Opinion (verdict, notes, anything they said or ignored)</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. Basic blood work normal. Believes symptoms are stress-related. Did not review joint swelling or temperature fluctuation."
+                  value={newDoc.opinion_text}
+                  onChange={e => setNewDoc({...newDoc, opinion_text: e.target.value})}
+                  className="form-input"
+                  style={{ fontSize: "13px", resize: "vertical" }}
+                />
               </div>
+
+              {opinionError && (
+                <div style={{ padding: "10px 14px", borderRadius: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: "12.5px", fontWeight: 700 }}>
+                  {opinionError}
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                 <button type="button" onClick={() => setShowOpinionForm(false)} className="btn btn-secondary btn-sm border dark:border-slate-800">Cancel</button>
@@ -1223,12 +1402,12 @@ export default function RedesignedDiagnosticGuard() {
               <div style={{ gridColumn: "1 / -1", padding: "24px", borderRadius: "14px", border: "1.5px dashed var(--border)", color: "var(--text-secondary)", fontSize: "13px", textAlign: "center" }}>
                 No specialist opinions logged yet. Add each doctor verdict here so Diagnostic Guard can compare contradictions against the uploaded reports and ongoing symptoms.
               </div>
-            ) : doctorOpinions.map((opinion, i) => (
-              <div 
-                key={i} 
+            ) : doctorOpinions.map(opinion => (
+              <div
+                key={opinion.id}
                 style={{
                   padding: "24px", borderRadius: "18px", border: "1.5px solid var(--border)",
-                  background: "var(--surface)", display: "flex", flexDirection: "column", justifyContent: "space-between"
+                  background: "var(--surface)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px"
                 }}
               >
                 <div>
@@ -1240,45 +1419,56 @@ export default function RedesignedDiagnosticGuard() {
                     <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 700, fontFamily: "monospace" }}>{opinion.date}</span>
                   </div>
 
-                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#0F766E", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#0F766E", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
                     Specialty: <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>{opinion.specialty}</span>
                   </div>
 
-                  <div style={{
-                    padding: "8px 12px", borderRadius: "8px", background: "rgba(245,158,11,0.05)",
-                    border: "1px solid rgba(245,158,11,0.15)", fontSize: "12.5px", fontWeight: 800,
-                    color: "#D97706", marginBottom: "14px"
-                  }}>
-                    Verdict: {opinion.verdict}
-                  </div>
-
-                  <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, fontStyle: "italic", marginBottom: "16px" }}>
-                    &ldquo;{opinion.notes}&rdquo;
+                  <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, fontStyle: "italic" }}>
+                    &ldquo;{opinion.opinion_text}&rdquo;
                   </p>
                 </div>
 
-                <div style={{ paddingTop: "10px", borderTop: "1px solid #F1F5F9", fontSize: "12px", color: "#EF4444", fontWeight: 700 }}>
-                  <strong>Ignored Indicators:</strong> {opinion.ignoredSymptoms}
-                </div>
+                <button
+                  onClick={() => handleDeleteOpinion(opinion.id)}
+                  style={{ alignSelf: "flex-end", background: "none", border: "none", cursor: "pointer", color: "#94A3B8", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <X size={12} /> Remove
+                </button>
               </div>
             ))}
           </div>
 
-          {/* AI Conflict Warning */}
-          <div style={{
-            padding: "20px", borderRadius: "16px",
-            background: "rgba(239,68,68,0.04)", border: "1.5px solid rgba(239,68,68,0.15)",
-            display: "flex", gap: "12px"
-          }}>
-            <Scale size={20} color="#EF4444" style={{ flexShrink: 0, marginTop: "2px" }} />
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: 800, color: "#991B1B" }}>AI Joint Conflict Audit Analysis:</div>
-              <p style={{ fontSize: "13px", color: "#B91C1C", lineHeight: 1.6, marginTop: "4px" }}>
-                {doctorOpinions.length === 0
-                  ? "No doctor verdicts have been logged yet. Once opinions are added, this audit will compare each conclusion against the symptom timeline, uploaded report text, and unresolved pain points."
-                  : `${doctorOpinions.length} doctor opinion${doctorOpinions.length === 1 ? "" : "s"} logged. Diagnostic Guard will compare verdicts such as ${doctorOpinions.map(opinion => opinion.verdict).slice(0, 3).join(", ")} against ${patientDetectedSymptoms.join(", ") || "the user's symptoms"} and the uploaded report evidence.`}
-              </p>
+          {/* Contradiction check (real LLM classify call, Task 19) */}
+          <div style={{ padding: "20px", borderRadius: "16px", background: "var(--background)", border: "1.5px solid var(--border)", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <Scale size={18} color="#0F766E" />
+                <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--text-primary)" }}>Doctor Opinion Contradiction Check</span>
+              </div>
+              <button
+                onClick={handleCheckContradictions}
+                disabled={checkingContradictions || doctorOpinions.length < 2}
+                className="btn btn-primary btn-sm"
+                style={{ fontSize: "12px", fontWeight: 700 }}
+              >
+                {checkingContradictions ? "Checking..." : "Check for Contradictions"}
+              </button>
             </div>
+            {doctorOpinions.length < 2 && (
+              <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", margin: 0 }}>Log at least two specialist opinions to run a contradiction check.</p>
+            )}
+            {contradictionError && (
+              <div style={{ padding: "10px 14px", borderRadius: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: "12.5px", fontWeight: 700 }}>
+                {contradictionError}
+              </div>
+            )}
+            {contradictions.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {contradictions.map(c => (
+                  <ContradictionCard key={`${c.a_id}-${c.b_id}`} contradiction={c} doctorLabel={doctorLabel} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1440,80 +1630,127 @@ export default function RedesignedDiagnosticGuard() {
                   .no-print { display: none !important; }
                 }
               `}</style>
-              
-              <div style={{ borderBottom: "3px solid var(--border)", paddingBottom: "12px", marginBottom: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <h1 style={{ fontSize: "20px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", margin: 0 }}>Clinical Case Advocacy Brief</h1>
-                    <span style={{ fontSize: "10px", fontFamily: "monospace", color: "var(--text-secondary)" }}>Protocol Status: ACTIVE | CASE-REF: 32DD-F3FC-A069</span>
-                  </div>
-                  <div style={{ textAlign: "right", fontSize: "11px", color: "var(--text-secondary)" }}>
-                    <div>Evidence Points: {patientTimeline.length}</div>
-                    <div>Date Compiled: {new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })}</div>
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ marginBottom: "20px" }}>
-                <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
-                  1. Clinical Discrepancy Rationale
-                </h2>
-                <p style={{ fontSize: "12px", lineHeight: 1.6, color: "#1E293B" }}>
-                  The patient record currently highlights {patientDetectedSymptoms.join(", ") || "reported symptoms"} with average tracked burden around {primaryAvg}/10{symptomSlots[1] ? ` and ${secondaryAvg}/10` : ""}. Uploaded reports and logged doctor opinions are compared against the ongoing symptom timeline so single-point findings are not treated as the complete clinical picture.
-                </p>
-              </div>
-
-              <div style={{ marginBottom: "20px" }}>
-                <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
-                  2. Under-Testing Gaps Identified
-                </h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "12px" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700 }}>Thyroid Profile Audit: 25% Complete</div>
-                    <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>Omitted checks: Free T3 (active), Free T4 (circulating), TPO Antibodies, Thyroglobulin Antibodies.</div>
-                    <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", fontStyle: "italic", marginTop: "4px" }}>*Clinical basis: Ruling out thyroid dysfunction based on TSH screen alone neglects secondary central hypothyroid depletion or autoimmune Hashimoto&apos;s antibodies.</p>
-                  </div>
-                  <div style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "12px" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700 }}>Complete Blood Count (CBC) Audit: 33% Complete</div>
-                    <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>Omitted checks: Serum Ferritin (iron storage), Vitamin D3, Vitamin B12 & Folate.</div>
-                    <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", fontStyle: "italic", marginTop: "4px" }}>*Clinical basis: Normal hemoglobin levels exclude anemia, but fail to audit cellular iron storage. Depleted ferritin causes severe pain and muscle lethargy.</p>
-                  </div>
-                </div>
-              </div>
-
-              {requestedMarkers.length > 0 && (
-                <div style={{ marginBottom: "20px", padding: "16px", borderRadius: "8px", background: "var(--background)", border: "1.5px solid var(--border)" }}>
-                  <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "#0F766E", marginBottom: "8px" }}>
-                    3. Recommended Diagnostic Requisitions
-                  </h2>
-                  <p style={{ fontSize: "11.5px", color: "#334155", marginBottom: "8px" }}>It is recommended to run the following indicators to resolve metabolic and autonomic testing gaps:</p>
-                  <ul style={{ paddingLeft: "20px", fontSize: "11.5px", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    {requestedMarkers.map((m, i) => <li key={i} style={{ fontWeight: 700 }}>{m}</li>)}
-                  </ul>
-                </div>
-              )}
-
-              <div style={{ marginBottom: "20px" }}>
-                <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
-                  4. Specialist Consensus Contradiction Grid
-                </h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {doctorOpinions.map((opinion, idx) => (
-                    <div key={idx} style={{ fontSize: "11.5px", display: "grid", gridTemplateColumns: "1.5fr 1fr 2.5fr", gap: "10px", paddingBottom: "6px", borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ fontWeight: 700 }}>{opinion.doctor} ({opinion.specialty})</span>
-                      <span style={{ fontWeight: 700, color: "#D97706" }}>{opinion.verdict}</span>
-                      <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                        Decision: {opinion.notes} | Ignored: {opinion.ignoredSymptoms}
-                      </span>
+              {briefLoading && !brief ? (
+                <div style={{ padding: "40px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "13px" }}>Loading advocacy brief...</div>
+              ) : briefError ? (
+                <div style={{ padding: "20px", borderRadius: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: "13px" }}>{briefError}</div>
+              ) : brief ? (
+                <>
+                  <div style={{ borderBottom: "3px solid var(--border)", paddingBottom: "12px", marginBottom: "24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <h1 style={{ fontSize: "20px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", margin: 0 }}>Clinical Case Advocacy Brief</h1>
+                        <span style={{ fontSize: "10px", fontFamily: "monospace", color: "var(--text-secondary)" }}>
+                          Protocol Status: {brief.escalated ? "ACTIVE" : "RESOLVED"} | CASE-REF: {brief.case_ref}
+                        </span>
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: "11px", color: "var(--text-secondary)" }}>
+                        <div>Logged Days (30d): {brief.tracker_averages.days_logged}</div>
+                        <div>Date Compiled: {formatIsoDate(brief.generated_at)}</div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", borderTop: "1.5px solid var(--border)", paddingTop: "12px", marginTop: "32px", fontSize: "10px", color: "var(--text-secondary)", fontFamily: "monospace" }}>
-                <span>Report Compiled via EchoCare AI System</span>
-                <span>Advocacy Protocol: ACTIVE</span>
-              </div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
+                      1. Tracked Symptom Burden (last 30 days)
+                    </h2>
+                    {brief.tracker_averages.days_logged === 0 ? (
+                      <p style={{ fontSize: "12px", lineHeight: 1.6, color: "#1E293B" }}>No tracker logs in the last 30 days yet.</p>
+                    ) : (
+                      <p style={{ fontSize: "12px", lineHeight: 1.6, color: "#1E293B" }}>
+                        Across {brief.tracker_averages.days_logged} logged day{brief.tracker_averages.days_logged === 1 ? "" : "s"}: average energy {brief.tracker_averages.energy ?? "–"}/10,
+                        {" "}pain {brief.tracker_averages.pain ?? "–"}/10, stress {brief.tracker_averages.stress ?? "–"}/10, sleep {brief.tracker_averages.sleep_hours ?? "–"}h.
+                        Uploaded reports and logged doctor opinions are compared against this ongoing pattern so single-point findings are not treated as the complete clinical picture.
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: "20px" }}>
+                    <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
+                      2. Unresolved Symptom Gaps
+                    </h2>
+                    {brief.gaps.length === 0 ? (
+                      <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>No unresolved symptom gaps detected.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {brief.gaps.map(gap => (
+                          <div key={gap.theme} style={{ border: "1px solid var(--border)", borderRadius: "8px", padding: "12px" }}>
+                            <div style={{ fontSize: "12px", fontWeight: 700 }}>{humanizeTheme(gap.theme)}: present {gap.weeks_present}/3 weeks</div>
+                            <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                              {formatIsoDate(gap.first_seen)} – {formatIsoDate(gap.last_seen)} · not addressed by any uploaded report or doctor opinion.
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {brief.requested_markers.length > 0 && (
+                    <div style={{ marginBottom: "20px", padding: "16px", borderRadius: "8px", background: "var(--background)", border: "1.5px solid var(--border)" }}>
+                      <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "#0F766E", marginBottom: "8px" }}>
+                        3. Recommended Diagnostic Requisitions
+                      </h2>
+                      <p style={{ fontSize: "11.5px", color: "#334155", marginBottom: "8px" }}>It is recommended to run the following indicators to resolve testing gaps:</p>
+                      <ul style={{ paddingLeft: "20px", fontSize: "11.5px", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        {brief.requested_markers.map((m, i) => <li key={i} style={{ fontWeight: 700 }}>{m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: "20px" }}>
+                    <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
+                      4. Specialist Consensus Contradiction Grid
+                    </h2>
+                    {brief.doctor_opinions.length === 0 ? (
+                      <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>No specialist opinions logged yet.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {brief.doctor_opinions.map(opinion => (
+                          <div key={opinion.id} style={{ fontSize: "11.5px", display: "grid", gridTemplateColumns: "1.5fr 3fr", gap: "10px", paddingBottom: "6px", borderBottom: "1px solid #F1F5F9" }}>
+                            <span style={{ fontWeight: 700 }}>{opinion.doctor} ({opinion.specialty}) · {opinion.date}</span>
+                            <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{opinion.opinion_text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {brief.contradictions.length > 0 && (
+                      <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {brief.contradictions.map(c => {
+                          const a = brief.doctor_opinions.find(o => o.id === c.a_id);
+                          const b = brief.doctor_opinions.find(o => o.id === c.b_id);
+                          return (
+                            <div key={`${c.a_id}-${c.b_id}`} style={{ fontSize: "11px", color: c.contradicts ? "#B91C1C" : "#334155" }}>
+                              <strong>{a?.doctor ?? "Unknown"} vs {b?.doctor ?? "Unknown"}:</strong> {c.summary}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {brief.top_insights.length > 0 && (
+                    <div style={{ marginBottom: "20px" }}>
+                      <h2 style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", borderBottom: "1.5px solid var(--border)", paddingBottom: "4px", marginBottom: "8px" }}>
+                        5. Evidence-Backed Patterns
+                      </h2>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {brief.top_insights.map(insight => (
+                          <div key={insight.theme} style={{ fontSize: "11.5px" }}>
+                            <strong>{insight.title}</strong> ({Math.round(insight.confidence * 100)}% confidence{insight.low_confidence ? ", low" : ""}): {insight.observation}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", borderTop: "1.5px solid var(--border)", paddingTop: "12px", marginTop: "32px", fontSize: "10px", color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                    <span>This is a discussion guide for your clinician, not a diagnosis.</span>
+                    <span>Advocacy Protocol: {brief.escalated ? "ACTIVE" : "RESOLVED"}</span>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

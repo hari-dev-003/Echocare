@@ -1,7 +1,7 @@
 "use client";
 import AppLayout from "@/components/AppLayout";
 import { useMemo, useState } from "react";
-import { Upload, FileText, Eye, Trash2, Download, Plus, AlertCircle, Sparkles, Loader2, CheckCircle } from "lucide-react";
+import { Upload, FileText, Eye, Trash2, Plus, AlertCircle, Sparkles, Loader2, CheckCircle } from "lucide-react";
 import { getStoredToken } from "@/lib/auth";
 import { BACKEND_URL } from "@/lib/backend";
 
@@ -214,7 +214,7 @@ export default function ReportsPage() {
               <Plus size={14} /> Choose PDF Files
             </button>
             <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "12px" }}>
-              Supports multiple PDF files. Cloudinary storage is handled by the backend upload service.
+              Supports multiple PDF files, up to 10 MB each.
             </p>
             {uploadError && (
               <div className="alert alert-warning" style={{ marginTop: "14px", fontSize: "12px", display: "inline-flex" }}>
@@ -267,7 +267,7 @@ export default function ReportsPage() {
                 <div style={{ alignSelf: "center" }}><div className={`badge badge-${r.status === "analyzed" ? "success" : r.status === "error" ? "danger" : "primary"}`} style={{ fontSize: "10px" }}>{r.status === "analyzed" ? "Analyzed" : r.status === "error" ? "Error" : "Uploaded"}</div></div>
                 <div style={{ display: "flex", gap: "6px", alignSelf: "center" }}>
                   <button className="btn btn-ghost btn-sm" style={{ padding: "6px" }} title="View"><Eye size={13} /></button>
-                  <button className="btn btn-ghost btn-sm" style={{ padding: "6px" }} title="Download" disabled={!r.backendId && !r.cloudinaryUrl} onClick={e => { e.stopPropagation(); if (r.cloudinaryUrl) window.open(r.cloudinaryUrl, "_blank"); else if (r.backendId) window.open(`${BACKEND_URL}/api/story/report/${r.backendId}/download`, "_blank"); }}><Download size={13} /></button>
+                  {/* Download is hidden until report storage ships (Task 27) — there is no file to fetch yet. */}
                   <button className="btn btn-ghost btn-sm" style={{ padding: "6px", color: "#EF4444" }} title="Delete" onClick={e => { e.stopPropagation(); removeReport(i); }}><Trash2 size={13} /></button>
                 </div>
               </div>
@@ -296,12 +296,13 @@ export default function ReportsPage() {
 
         {/* Sidebar - AI Summary */}
         <div className="lg:col-span-1" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <button 
-            className="btn btn-primary" 
-            onClick={() => window.open("/reports/print", "_blank")}
-            style={{ width: "100%", gap: "8px", background: "linear-gradient(135deg, #0F766E, #14B8A6)", boxShadow: "0 4px 12px rgba(15,118,110,0.25)" }}
+          <button
+            className="btn btn-primary"
+            disabled
+            title="Coming soon"
+            style={{ width: "100%", gap: "8px", opacity: 0.5, cursor: "not-allowed" }}
           >
-            <Sparkles size={14} /> Generate Doctor PDF Report
+            <Sparkles size={14} /> Generate Doctor PDF Report (Coming Soon)
           </button>
 
           <div className="ai-card">

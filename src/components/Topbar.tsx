@@ -53,7 +53,9 @@ export default function Topbar({ title, subtitle }: TopbarProps) {
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginLeft: "4px" }}>
           <div className="avatar" style={{ width: "36px", height: "36px", fontSize: "13px" }}>{avatarInitial}</div>
           <div>
-            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{displayName}</div>
+            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
+              {displayName}
+            </div>
             <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{user?.email ?? "Patient"}</div>
           </div>
         </div>

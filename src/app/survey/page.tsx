@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronRight, ChevronLeft, Check, Save, User, Stethoscope, FileText, AlertCircle, Loader2 } from "lucide-react";
 import { markSurveyCompleted } from "@/lib/auth";
-import { fetchFromBackend } from "@/lib/backend";
+import { backendJSON } from "@/lib/backend";
 
 const steps = [
   { label: "About You", icon: User, color: "#0F766E" },
@@ -67,6 +67,7 @@ export default function SurveyPage() {
   const [data, setData] = useState<SurveyData>(initialData);
   const [autoSaved, setAutoSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -81,16 +82,13 @@ export default function SurveyPage() {
       if (Object.keys(loginProfile).length > 0) setData(prev => ({ ...prev, ...loginProfile }));
 
       try {
-        const res = await fetchFromBackend("/api/survey");
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.survey_data) {
-            const merged = { ...json.survey_data, ...loginProfile };
-            setData(prev => ({ ...prev, ...merged }));
-            // Mirror to localStorage for offline fallback
-            localStorage.setItem("echocare-survey", JSON.stringify(merged));
-            return;
-          }
+        const json = await backendJSON<{ survey_data: SurveyData | null }>("/api/survey");
+        if (json?.survey_data) {
+          const merged = { ...json.survey_data, ...loginProfile };
+          setData(prev => ({ ...prev, ...merged }));
+          // Mirror to localStorage for offline fallback (backend wins over cache)
+          localStorage.setItem("echocare-survey", JSON.stringify(merged));
+          return;
         }
       } catch {}
 
@@ -103,21 +101,25 @@ export default function SurveyPage() {
     loadSurvey();
   }, [user]);
 
-  // Debounced auto-save to MongoDB
-  const saveToBackend = useCallback(async (updated: SurveyData) => {
+  // Debounced auto-save to MongoDB. `isRetry` limits this to a single retry attempt.
+  const saveToBackend = useCallback(async (updated: SurveyData, isRetry = false) => {
     setSaving(true);
     try {
-      await fetchFromBackend("/api/survey", {
+      await backendJSON("/api/survey", {
         method: "POST",
         body: JSON.stringify({ survey_data: updated }),
       });
-      // Also mirror to localStorage for offline fallback
+      // Only cache locally once the backend confirms the save.
       localStorage.setItem("echocare-survey", JSON.stringify(updated));
+      setSaveError(false);
       setAutoSaved(true);
       setTimeout(() => setAutoSaved(false), 2000);
     } catch {
-      // Silently fall back to localStorage only
-      localStorage.setItem("echocare-survey", JSON.stringify(updated));
+      setAutoSaved(false);
+      setSaveError(true);
+      if (!isRetry) {
+        setTimeout(() => saveToBackend(updated, true), 800);
+      }
     } finally {
       setSaving(false);
     }
@@ -146,13 +148,15 @@ export default function SurveyPage() {
     setSubmitted(true);
     try {
       // Final save to MongoDB
-      await fetchFromBackend("/api/survey", {
+      await backendJSON("/api/survey", {
         method: "POST",
         body: JSON.stringify({ survey_data: data }),
       });
-    } catch {}
-    // Update localStorage + mark survey complete in AuthProvider
-    localStorage.setItem("echocare-survey", JSON.stringify(data));
+      localStorage.setItem("echocare-survey", JSON.stringify(data));
+      setSaveError(false);
+    } catch {
+      setSaveError(true);
+    }
     markSurveyCompleted();
     if (user) login({ ...user, surveyCompleted: true });
     setTimeout(() => router.push("/story"), 1200);
@@ -338,7 +342,8 @@ export default function SurveyPage() {
             <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)" }}>Step {currentStep + 1} of {steps.length}</span>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               {saving && <span style={{ fontSize: "12px", color: "#94A3B8", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> Saving...</span>}
-              {!saving && autoSaved && <span style={{ fontSize: "12px", color: "#22C55E", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}><Save size={11} /> Saved to MongoDB</span>}
+              {!saving && autoSaved && <span style={{ fontSize: "12px", color: "#22C55E", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}><Save size={11} /> Saved</span>}
+              {!saving && !autoSaved && saveError && <span style={{ fontSize: "12px", color: "#EF4444", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}><AlertCircle size={11} /> Not saved — retrying</span>}
               <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>{Math.round(progress)}% complete</span>
             </div>
           </div>

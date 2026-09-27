@@ -3,6 +3,7 @@ import AppLayout from "@/components/AppLayout";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Calendar, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { backendJSON, BackendError } from "@/lib/backend";
 
 const moods = [
   { emoji: "😊", label: "Great", val: "great" },
@@ -14,6 +15,42 @@ const moods = [
 
 const symptoms = ["Fatigue", "Joint Pain", "Headache", "Brain Fog", "Nausea", "Dizziness", "Chest Pain", "Shortness of Breath", "Muscle Weakness", "Digestive Issues"];
 
+type TrackerLogResponse = {
+  date: string;
+  mood: string;
+  symptoms: string[];
+  sleep_hours: number;
+  water_glasses: number;
+  stress: number;
+  energy: number;
+  pain: number;
+  notes: string;
+  diet?: string | null;
+  activity?: string | null;
+  medication?: string | null;
+};
+
+const dietOptions = [
+  { value: "excellent", label: "Excellent — Healthy balanced meals" },
+  { value: "good", label: "Good — Mostly healthy" },
+  { value: "average", label: "Average — Some healthy choices" },
+  { value: "poor", label: "Poor — Mostly processed food" },
+];
+const activityOptions = [
+  { value: "none", label: "None" },
+  { value: "light", label: "Light walk" },
+  { value: "moderate", label: "Moderate exercise (30 min)" },
+  { value: "intense", label: "Intense workout" },
+];
+const medicationOptions = [
+  { value: "all_taken", label: "Yes, all taken" },
+  { value: "missed", label: "Missed dose" },
+  { value: "none", label: "No medication" },
+  { value: "na", label: "N/A" },
+];
+
+type HistoryResponse = { logs: TrackerLogResponse[]; streak: number };
+
 export default function TrackerPage() {
   const [selectedMood, setSelectedMood] = useState("good");
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
@@ -22,76 +59,87 @@ export default function TrackerPage() {
   const [stress, setStress] = useState(4);
   const [energy, setEnergy] = useState(6);
   const [pain, setPain] = useState(3);
+  const [notes, setNotes] = useState("");
+  const [diet, setDiet] = useState("");
+  const [activity, setActivity] = useState("");
+  const [medication, setMedication] = useState("");
   const [activeView, setActiveView] = useState<"today" | "week" | "month">("today");
   const [saved, setSaved] = useState(false);
-  const [savedLog, setSavedLog] = useState<Record<string, unknown> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const router = useRouter();
 
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<TrackerLogResponse[]>([]);
+  const [streak, setStreak] = useState(0);
 
-  useEffect(() => {
-    fetch("/api/tracker")
-      .then(res => res.json())
+  const loadHistory = () => {
+    backendJSON<HistoryResponse>("/api/tracker/history")
       .then(data => {
-        if (Array.isArray(data)) {
-          setHistory(data);
-          const todayStr = new Date().toISOString().split("T")[0];
-          const todayLog = data.find((l: any) => l.date === todayStr);
-          if (todayLog) {
-            setSavedLog(todayLog);
-            setSelectedMood(todayLog.mood);
-            setSleep(todayLog.sleep_hours);
-            setWater(todayLog.water_intake);
-            setPain(todayLog.joint_pain);
-            setEnergy(10 - todayLog.fatigue);
-          }
+        setHistory(data.logs);
+        setStreak(data.streak);
+        const todayStr = new Date().toISOString().split("T")[0];
+        const todayLog = data.logs.find(l => l.date === todayStr);
+        if (todayLog) {
+          setSelectedMood(todayLog.mood);
+          setSleep(todayLog.sleep_hours);
+          setWater(todayLog.water_glasses);
+          setStress(todayLog.stress);
+          setEnergy(todayLog.energy);
+          setPain(todayLog.pain);
+          setNotes(todayLog.notes ?? "");
+          setDiet(todayLog.diet ?? "");
+          setActivity(todayLog.activity ?? "");
+          setMedication(todayLog.medication ?? "");
+          setSelectedSymptoms(todayLog.symptoms ?? []);
         }
       })
       .catch(err => console.error("Failed to load logs:", err));
+  };
+
+  useEffect(() => {
+    loadHistory();
   }, []);
 
-  const saveTrackerLog = async () => {
+  const saveTrackerLog = async (): Promise<boolean> => {
     const payload = {
       mood: selectedMood,
       symptoms: selectedSymptoms,
-      sleep,
-      water,
+      sleep_hours: sleep,
+      water_glasses: water,
       stress,
       energy,
       pain,
-      date: new Date().toISOString(),
+      notes,
+      diet: diet || null,
+      activity: activity || null,
+      medication: medication || null,
+      date: new Date().toISOString().split("T")[0],
     };
-    
+
+    setSaving(true);
+    setSaveError("");
     try {
-      const res = await fetch("/api/tracker", {
+      await backendJSON("/api/tracker", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setSavedLog(data.log);
-        
-        // Reload history
-        const histRes = await fetch("/api/tracker");
-        if (histRes.ok) {
-          const histData = await histRes.json();
-          setHistory(histData);
-        }
-      }
+      loadHistory();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+      return true;
     } catch (err) {
-      console.error("Failed to save check-in:", err);
+      setSaveError(err instanceof BackendError ? err.message : "Failed to save check-in. Please try again.");
+      return false;
+    } finally {
+      setSaving(false);
     }
-    
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2000);
   };
 
   const handleSave = () => saveTrackerLog();
 
-  const handleGenerateInsights = () => {
-    saveTrackerLog();
-    router.push("/insights");
+  const handleGenerateInsights = async () => {
+    const ok = await saveTrackerLog();
+    if (ok) router.push("/insights");
   };
 
   const toggleSymptom = (s: string) => {
@@ -116,16 +164,35 @@ export default function TrackerPage() {
     </div>
   );
 
-  const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const weekData = [
-    { mood: "😊", sleep: 7.1, stress: 4, symptoms: 2 },
-    { mood: "🙂", sleep: 6.5, stress: 5, symptoms: 3 },
-    { mood: "😐", sleep: 4.8, stress: 7, symptoms: 4 },
-    { mood: "🙂", sleep: 7.4, stress: 3, symptoms: 1 },
-    { mood: "😊", sleep: 6.8, stress: 4, symptoms: 2 },
-    { mood: "😊", sleep: 8.2, stress: 2, symptoms: 1 },
-    { mood: "🙂", sleep: 7.0, stress: 3, symptoms: 2 },
+  // Last 7 calendar days, populated from real history — no fabricated numbers.
+  const moodEmoji: Record<string, string> = { great: "😊", good: "🙂", okay: "😐", low: "😔", bad: "😞" };
+
+  // Current-month calendar grid built from real history — days with a log are highlighted, nothing invented.
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const today = new Date();
+  const calYear = today.getFullYear();
+  const calMonth = today.getMonth();
+  const monthLabel = today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstWeekdayMon = (new Date(calYear, calMonth, 1).getDay() + 6) % 7; // 0 = Monday
+  const loggedDates = new Set(history.map(l => l.date));
+  const monthCells: (number | null)[] = [
+    ...Array.from({ length: firstWeekdayMon }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
+  const weekData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const iso = d.toISOString().split("T")[0];
+    const log = history.find(l => l.date === iso);
+    return {
+      day: d.toLocaleDateString("en-US", { weekday: "short" }),
+      isToday: i === 6,
+      mood: log ? moodEmoji[log.mood] ?? "•" : null,
+      sleep: log ? log.sleep_hours : null,
+      stress: log ? log.stress : null,
+    };
+  });
 
   return (
     <AppLayout title="Daily Health Tracker" subtitle="Track your health and lifestyle every day">
@@ -204,64 +271,71 @@ export default function TrackerPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                   <div className="form-group">
                     <label className="form-label">Diet today</label>
-                    <select className="form-input">
-                      <option>Select diet quality</option>
-                      <option>Excellent — Healthy balanced meals</option>
-                      <option>Good — Mostly healthy</option>
-                      <option>Average — Some healthy choices</option>
-                      <option>Poor — Mostly processed food</option>
+                    <select className="form-input" value={diet} onChange={e => setDiet(e.target.value)}>
+                      <option value="">Select diet quality</option>
+                      {dietOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Physical activity</label>
-                    <select className="form-input">
-                      <option>Select activity level</option>
-                      <option>None</option>
-                      <option>Light walk</option>
-                      <option>Moderate exercise (30 min)</option>
-                      <option>Intense workout</option>
+                    <select className="form-input" value={activity} onChange={e => setActivity(e.target.value)}>
+                      <option value="">Select activity level</option>
+                      {activityOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Medication taken?</label>
-                    <div style={{ display: "flex", gap: "10px" }}>
-                      {["Yes, all taken", "Missed dose", "No medication", "N/A"].map(opt => (
-                        <div key={opt} style={{ padding: "8px 14px", borderRadius: "8px", border: "1.5px solid var(--border)", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", transition: "all 0.2s" }}
-                          onClick={e => {
-                            document.querySelectorAll("[data-med]").forEach(el => {
-                              (el as HTMLElement).style.borderColor = "var(--border)";
-                              (el as HTMLElement).style.color = "var(--text-secondary)";
-                            });
-                            e.currentTarget.style.borderColor = "#0F766E";
-                            e.currentTarget.style.color = "#0F766E";
-                          }}
-                          data-med={opt}
-                        >{opt}</div>
-                      ))}
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      {medicationOptions.map(o => {
+                        const active = medication === o.value;
+                        return (
+                          <button key={o.value} type="button" aria-pressed={active}
+                            onClick={() => setMedication(active ? "" : o.value)}
+                            style={{ padding: "8px 14px", borderRadius: "8px", border: `1.5px solid ${active ? "var(--primary)" : "var(--border)"}`, background: active ? "rgba(15,118,110,0.06)" : "transparent", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: active ? "var(--primary)" : "var(--text-secondary)", transition: "all 0.2s", fontFamily: "inherit" }}
+                          >{o.label}</button>
+                        );
+                      })}
                     </div>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Notes (optional)</label>
-                    <textarea className="form-input" placeholder="Any additional notes about today..." style={{ minHeight: "80px" }} />
+                    <textarea
+                      className="form-input"
+                      placeholder="Any additional notes about today..."
+                      style={{ minHeight: "80px" }}
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      maxLength={2000}
+                    />
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                <button
-                  className="btn btn-primary"
-                  style={{ padding: "12px 32px", fontSize: "15px" }}
-                  onClick={handleSave}
-                >
-                  <Save size={16} />{saved ? "✓ Saved!" : "Save Today's Log"}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  style={{ padding: "12px 24px", fontSize: "15px" }}
-                  onClick={handleGenerateInsights}
-                >
-                  <Sparkles size={16} /> Generate AI Insights
-                </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: "12px 32px", fontSize: "15px" }}
+                    onClick={handleSave}
+                    disabled={saving}
+                  >
+                    <Save size={16} />{saving ? "Saving…" : saved ? "✓ Saved!" : "Save Today's Log"}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: "12px 24px", fontSize: "15px" }}
+                    onClick={handleGenerateInsights}
+                    disabled={saving}
+                  >
+                    <Sparkles size={16} /> Generate AI Insights
+                  </button>
+                </div>
+                {saveError && (
+                  <div className="alert alert-warning" style={{ fontSize: "13px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span>{saveError}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={handleSave}>Retry</button>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -270,13 +344,19 @@ export default function TrackerPage() {
             <div className="card" style={{ padding: "24px" }}>
               <div className="section-title" style={{ marginBottom: "20px" }}>Weekly Overview</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "10px" }}>
-                {weekDays.map((day, i) => (
-                  <div key={day} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "8px" }}>{day}</div>
-                    <div style={{ padding: "12px 8px", borderRadius: "12px", background: i === 6 ? "rgba(15,118,110,0.08)" : "var(--background)", border: `1px solid ${i === 6 ? "#0F766E" : "var(--border)"}` }}>
-                      <div style={{ fontSize: "22px", marginBottom: "6px" }}>{weekData[i].mood}</div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{weekData[i].sleep}h</div>
-                      <div style={{ fontSize: "11px", color: weekData[i].stress > 5 ? "#F59E0B" : "#22C55E", fontWeight: 600 }}>S:{weekData[i].stress}</div>
+                {weekData.map((d, i) => (
+                  <div key={i} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "8px" }}>{d.day}</div>
+                    <div style={{ padding: "12px 8px", borderRadius: "12px", background: d.isToday ? "rgba(15,118,110,0.08)" : "var(--background)", border: `1px solid ${d.isToday ? "#0F766E" : "var(--border)"}` }}>
+                      {d.mood ? (
+                        <>
+                          <div style={{ fontSize: "22px", marginBottom: "6px" }}>{d.mood}</div>
+                          <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{d.sleep}h</div>
+                          <div style={{ fontSize: "11px", color: (d.stress ?? 0) > 5 ? "#F59E0B" : "#22C55E", fontWeight: 600 }}>S:{d.stress}</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: "11px", color: "var(--text-muted)", padding: "10px 0" }}>No log</div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -286,22 +366,27 @@ export default function TrackerPage() {
 
           {activeView === "month" && (
             <div className="card" style={{ padding: "24px" }}>
-              <div className="section-title" style={{ marginBottom: "20px" }}>Monthly Calendar — July 2025</div>
+              <div className="section-title" style={{ marginBottom: "20px" }}>Monthly Calendar — {monthLabel}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px" }}>
                 {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(d => (
                   <div key={d} style={{ textAlign: "center", fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", paddingBottom: "8px" }}>{d}</div>
                 ))}
-                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                  <div key={day} style={{
-                    aspectRatio: "1 / 1", padding: "8px 4px", borderRadius: "8px", textAlign: "center",
-                    background: day <= 2 ? "rgba(15,118,110,0.1)" : "transparent",
-                    border: `1px solid ${day <= 2 ? "#0F766E" : "var(--border)"}`,
-                    cursor: "pointer"
-                  }}>
-                    <div style={{ fontSize: "12px", fontWeight: day <= 2 ? 700 : 400, color: day <= 2 ? "#0F766E" : "var(--text-secondary)" }}>{day}</div>
-                    {day <= 2 && <div style={{ fontSize: "14px" }}>😊</div>}
-                  </div>
-                ))}
+                {monthCells.map((day, i) => {
+                  if (day === null) return <div key={`blank-${i}`} />;
+                  const dateStr = `${calYear}-${pad2(calMonth + 1)}-${pad2(day)}`;
+                  const log = history.find(l => l.date === dateStr);
+                  const isToday = day === today.getDate();
+                  return (
+                    <div key={dateStr} style={{
+                      aspectRatio: "1 / 1", padding: "8px 4px", borderRadius: "8px", textAlign: "center",
+                      background: log ? "rgba(15,118,110,0.1)" : "transparent",
+                      border: `1px solid ${isToday ? "#0F766E" : log ? "rgba(15,118,110,0.4)" : "var(--border)"}`,
+                    }}>
+                      <div style={{ fontSize: "12px", fontWeight: log ? 700 : 400, color: log ? "#0F766E" : "var(--text-secondary)" }}>{day}</div>
+                      {log && <div style={{ fontSize: "14px" }}>{moodEmoji[log.mood] ?? "•"}</div>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -333,7 +418,7 @@ export default function TrackerPage() {
 
           {/* Streak */}
           <div style={{ background: "linear-gradient(135deg, #0F766E, #14B8A6)", borderRadius: "16px", padding: "20px", color: "white" }}>
-            <div style={{ fontSize: "28px", fontWeight: 900, letterSpacing: "-0.03em" }}>🔥 14</div>
+            <div style={{ fontSize: "28px", fontWeight: 900, letterSpacing: "-0.03em" }}>🔥 {streak}</div>
             <div style={{ fontSize: "14px", fontWeight: 700, marginTop: "4px" }}>Day Tracking Streak!</div>
             <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)", marginTop: "4px" }}>Keep it up — you&apos;re doing great.</div>
           </div>

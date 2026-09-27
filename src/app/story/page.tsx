@@ -5,7 +5,8 @@ import { Mic, MicOff, Save, Clock, Paperclip, Stethoscope, Lightbulb, ChevronRig
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { getStoredToken } from "@/lib/auth";
-import { BACKEND_URL } from "@/lib/backend";
+import { BACKEND_URL, backendJSON, BackendError } from "@/lib/backend";
+import EmergencyBanner, { EmergencyResult } from "@/components/EmergencyBanner";
 
 const tabs = ["Your Story", "Timeline", "Past Consultations", "Attachments"];
 
@@ -89,13 +90,6 @@ interface SpeechWindow extends Window {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 }
 
-const defaultTimelineEvents = [
-  { date: "Jan 2024", title: "Symptoms began", desc: "First noticed persistent fatigue and joint pain.", type: "start" },
-  { date: "Mar 2024", title: "First GP visit", desc: "Blood tests ordered — all within normal range.", type: "doctor" },
-  { date: "Jun 2024", title: "Rheumatology referral", desc: "Referred to rheumatologist. MRI scheduled.", type: "doctor" },
-  { date: "Sep 2024", title: "MRI Results", desc: "MRI came back normal. Symptoms persisting.", type: "report" },
-];
-
 function timelineDescription(item: TimelineEvent) {
   const scores = [
     typeof item.fatigue === "number" ? `Fatigue ${item.fatigue}/10` : "",
@@ -107,11 +101,13 @@ function timelineDescription(item: TimelineEvent) {
   return scores.length > 0 ? scores.join(" · ") : "Timeline point extracted from your story.";
 }
 
-const pastConsultations = [
-  { doctor: "Dr. Sarah Johnson", dept: "General Practice", date: "Mar 15, 2024", notes: "All blood tests normal. Follow up in 3 months." },
-  { doctor: "Dr. Mark Liu", dept: "Rheumatology", date: "Jun 22, 2024", notes: "No inflammatory markers detected. MRI recommended." },
-  { doctor: "Dr. Anita Patel", dept: "Neurology", date: "Sep 10, 2024", notes: "MRI results normal. Monitoring for further symptoms." },
-];
+interface DoctorFeedbackEntry {
+  doctor_name: string;
+  system: string;
+  review?: string;
+  consultation_date?: string;
+  created_at?: string;
+}
 
 const STORY_KEY = "echocare-story";
 const ANALYSIS_KEY = "echocare-story-analysis";
@@ -131,8 +127,10 @@ export default function StoryPage() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [surveyContext, setSurveyContext] = useState<Record<string, string | string[]>>({});
   const [analysisError, setAnalysisError] = useState("");
+  const [escalation, setEscalation] = useState<EmergencyResult | null>(null);
   const [editingCard, setEditingCard] = useState<string | null>(null);
   const [editedAnalysis, setEditedAnalysis] = useState<Analysis | null>(null);
+  const [consultations, setConsultations] = useState<DoctorFeedbackEntry[]>([]);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,10 +159,10 @@ export default function StoryPage() {
             if (json?.story_text) {
               setStory(json.story_text);
               localStorage.setItem(STORY_KEY, json.story_text);
-              if (json.timeline || json.mismatches) {
-                // Reconstruct analysis object if available
-                const saved = localStorage.getItem(ANALYSIS_KEY);
-                if (saved) { try { setAnalysis(JSON.parse(saved)); } catch {} }
+              if (json.analysis) {
+                setAnalysis(json.analysis);
+                setEditedAnalysis(json.analysis);
+                localStorage.setItem(ANALYSIS_KEY, JSON.stringify(json.analysis));
               }
               return;
             }
@@ -178,6 +176,9 @@ export default function StoryPage() {
       if (savedAnalysis) { try { setAnalysis(JSON.parse(savedAnalysis)); } catch {} }
     }
     loadStory();
+    backendJSON<DoctorFeedbackEntry[]>("/api/doctor-feedback")
+      .then(setConsultations)
+      .catch(() => {});
   }, [user]);
 
   // Save story text to MongoDB (debounced)
@@ -355,25 +356,28 @@ export default function StoryPage() {
     setAnalyzing(true);
     setAnalysisError("");
     setAnalysis(null);
+    setEscalation(null);
     try {
-      const token = getStoredToken();
-      const res = await fetch("/api/analyze-story", {
+      const data = await backendJSON<Analysis | { escalation: EmergencyResult }>("/api/story/analyze", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ story, surveyData: surveyContext }),
+        body: JSON.stringify({ story_text: story }),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if ("escalation" in data) {
+        // Story is saved by the backend even on an escalation hit; no analysis runs.
+        setEscalation(data.escalation);
+        return;
+      }
       setAnalysis(data);
       setEditedAnalysis(data);
+      // Backend already persisted story text + analysis; these are caches only.
       localStorage.setItem(ANALYSIS_KEY, JSON.stringify(data));
-      // Story is already saved in MongoDB via the analyze endpoint
       localStorage.setItem(STORY_KEY, story);
-    } catch {
-      setAnalysisError("Analysis failed. Please try again.");
+    } catch (err) {
+      if (err instanceof BackendError && err.status === 503) {
+        setAnalysisError("Analysis temporarily unavailable — your story is saved.");
+      } else {
+        setAnalysisError("Analysis failed. Please try again.");
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -401,14 +405,12 @@ export default function StoryPage() {
 
   const urgencyColor = { low: "#22C55E", medium: "#F59E0B", high: "#EF4444" };
 
-  const displayedTimelineEvents = analysis?.sourceTimeline?.length
-    ? analysis.sourceTimeline.map((item, index) => ({
-        date: item.week ?? `Point ${index + 1}`,
-        title: item.event ?? "Symptom update",
-        desc: timelineDescription(item),
-        type: item.event ? "report" : "start",
-      }))
-    : defaultTimelineEvents;
+  const displayedTimelineEvents = (analysis?.sourceTimeline ?? []).map((item, index) => ({
+    date: item.week ?? `Point ${index + 1}`,
+    title: item.event ?? "Symptom update",
+    desc: timelineDescription(item),
+    type: item.event ? "report" : "start",
+  }));
 
   const editableCards: EditableCard[] = analysis ? [
     { title: "Detected Symptoms", icon: <Activity size={14} />, color: "#EF4444", bg: "rgba(239,68,68,0.08)", items: (editedAnalysis?.detectedSymptoms ?? analysis.detectedSymptoms), key: "detectedSymptoms" },
@@ -446,6 +448,8 @@ export default function StoryPage() {
             {/* Story tab */}
             {activeTab === 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {escalation && <EmergencyBanner escalation={escalation} />}
+
                 <div style={{ background: "rgba(15,118,110,0.05)", border: "1px solid rgba(15,118,110,0.15)", borderRadius: "12px", padding: "14px 16px" }}>
                   <p style={{ fontSize: "13px", color: "#0F766E", lineHeight: 1.6 }}>
                     💡 <strong>Tips:</strong> Write or speak freely — include how it started, what makes it better/worse, how it affects your daily life, and your experiences with doctors. The more detail you share, the better the AI analysis.
@@ -545,10 +549,12 @@ export default function StoryPage() {
 
             {activeTab === 1 && (
               <div>
-                <div style={{ marginBottom: "24px", display: "flex", justifyContent: "flex-end" }}>
-                  <button className="btn btn-primary btn-sm">+ Add Event</button>
-                </div>
-                {displayedTimelineEvents.map((ev, i) => (
+                {displayedTimelineEvents.length === 0 ? (
+                  <div style={{ padding: "34px 12px", textAlign: "center", border: "1.5px dashed var(--border)", borderRadius: "14px" }}>
+                    <Clock size={28} color="var(--text-muted)" style={{ marginBottom: "10px" }} />
+                    <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>Your timeline appears after you analyze your story.</div>
+                  </div>
+                ) : displayedTimelineEvents.map((ev, i) => (
                   <div key={i} className="timeline-item">
                     <div className="timeline-dot" style={{ background: ev.type === "start" ? "#EF4444" : ev.type === "doctor" ? "#0F766E" : "#3B82F6" }}>
                       <Clock size={14} color="white" />
@@ -566,23 +572,33 @@ export default function StoryPage() {
             {activeTab === 2 && (
               <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button className="btn btn-primary btn-sm">+ Add Consultation</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => router.push("/feedback")}>+ Add Consultation</button>
                 </div>
-                {pastConsultations.map((c, i) => (
-                  <div key={i} className="card" style={{ padding: "20px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div>
-                        <div style={{ fontSize: "15px", fontWeight: 700 }}>{c.doctor}</div>
-                        <div style={{ fontSize: "12px", color: "#0F766E", fontWeight: 600 }}>{c.dept}</div>
-                        <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{c.date}</div>
-                      </div>
-                      <div className="badge badge-muted">{c.dept}</div>
-                    </div>
-                    <div style={{ marginTop: "12px", padding: "10px 12px", background: "var(--background)", borderRadius: "8px", fontSize: "13px", color: "var(--text-secondary)" }}>
-                      📋 {c.notes}
-                    </div>
+                {consultations.length === 0 ? (
+                  <div style={{ padding: "34px 12px", textAlign: "center", border: "1.5px dashed var(--border)", borderRadius: "14px" }}>
+                    <Stethoscope size={28} color="var(--text-muted)" style={{ marginBottom: "10px" }} />
+                    <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>No consultations logged yet — add one via Feedback.</div>
                   </div>
-                ))}
+                ) : consultations.map((c, i) => {
+                  const dateStr = c.consultation_date || c.created_at;
+                  return (
+                    <div key={i} className="card" style={{ padding: "20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontSize: "15px", fontWeight: 700 }}>{c.doctor_name}</div>
+                          <div style={{ fontSize: "12px", color: "#0F766E", fontWeight: 600 }}>{c.system}</div>
+                          {dateStr && <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>{new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                        </div>
+                        <div className="badge badge-muted">{c.system}</div>
+                      </div>
+                      {c.review && (
+                        <div style={{ marginTop: "12px", padding: "10px 12px", background: "var(--background)", borderRadius: "8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                          📋 {c.review}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

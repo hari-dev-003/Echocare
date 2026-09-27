@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { useState } from "react";
-import { MessageCircle, Leaf, Bell, TrendingUp, FileText, Heart, ArrowRight, Play, Sparkles, Zap } from "lucide-react";
+import { MessageCircle, Leaf, Bell, TrendingUp, FileText, Heart, ArrowRight, Play, Zap } from "lucide-react";
 
 
 export default function HomePage() {
@@ -59,22 +59,6 @@ export default function HomePage() {
             {greeting}, {displayName} 👋
           </h1>
           <p style={{ fontSize: "16px", color: "#64748B", marginBottom: "20px" }}>How are you feeling today?</p>
-          <button 
-            onClick={() => {
-              localStorage.setItem("demoMode", "true");
-              window.location.href = "/dashboard?demo=true";
-            }}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "8px",
-              padding: "10px 24px", borderRadius: "12px", background: "linear-gradient(135deg, #0F766E, #14B8A6)",
-              color: "white", fontSize: "14px", fontWeight: 700, border: "none", cursor: "pointer",
-              boxShadow: "0 8px 20px rgba(15,118,110,0.25)", transition: "all 0.2s"
-            }}
-            onMouseOver={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
-            onMouseOut={e => { e.currentTarget.style.transform = "translateY(0)"; }}
-          >
-            <Sparkles size={15} fill="white" /> Launch Hackathon Demo Mode
-          </button>
         </div>
 
         {/* Main Entry Cards */}
